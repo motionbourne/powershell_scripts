@@ -142,7 +142,7 @@ $sections = @(
     @{ Name = "Main Domain - TXT (SPF etc)";             Hostname = $domain;                                  Type = "TXT"   }
     @{ Name = "Main Domain - NS (Nameservers)";          Hostname = $domain;                                  Type = "NS"    }
     @{ Name = "Main Domain - SOA";                       Hostname = $domain;                                  Type = "SOA"   }
-    @{ Name = "Main Domain - CAA (SSL Certificate)";     Hostname = $domain;                                  Type = "CAA"   }
+    @{ Name = "Main Domain - CAA (SSL Certificate)";     Hostname = $domain;                                  Type = "257"   }
     @{ Name = "WWW Record";                              Hostname = "www.$domain";                            Type = "CNAME" }
     @{ Name = "FTP Record";                              Hostname = "ftp.$domain";                            Type = "A"     }
     @{ Name = "VPN Record";                              Hostname = "vpn.$domain";                            Type = "A"     }
