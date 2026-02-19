@@ -142,7 +142,7 @@ $sections = @(
     @{ Name = "Main Domain - TXT (SPF etc)";             Hostname = $domain;                                  Type = "TXT"   }
     @{ Name = "Main Domain - NS (Nameservers)";          Hostname = $domain;                                  Type = "NS"    }
     @{ Name = "Main Domain - SOA";                       Hostname = $domain;                                  Type = "SOA"   }
-    @{ Name = "Main Domain - CAA (SSL Certificate)";     Hostname = $domain;                                  Type = "257"   }
+    
     @{ Name = "WWW Record";                              Hostname = "www.$domain";                            Type = "CNAME" }
     @{ Name = "FTP Record";                              Hostname = "ftp.$domain";                            Type = "A"     }
     @{ Name = "VPN Record";                              Hostname = "vpn.$domain";                            Type = "A"     }
@@ -174,6 +174,37 @@ Write-Host "   $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')" -ForegroundColor Magen
 Write-Host "============================================" -ForegroundColor Magenta
 
 Get-DNSProvider -domain $domain
+
+# CAA record check (uses nslookup as Resolve-DnsName does not support CAA)
+Write-Host "`n==============================" -ForegroundColor Green
+Write-Host " Main Domain - CAA (SSL Certificate)" -ForegroundColor Green
+Write-Host "==============================" -ForegroundColor Green
+try {
+    $caaRaw = nslookup -type=CAA $domain 2>&1 | Where-Object { $_ -match "rdata" -or $_ -match "issue" -or $_ -match "CAA" }
+    if ($caaRaw) {
+        $caaRaw | ForEach-Object { Write-Host $_ }
+        $script:excelResults.Add([PSCustomObject]@{
+            Section  = "Main Domain - CAA (SSL Certificate)"
+            Record   = "CAA"
+            Hostname = $domain
+            Value    = ($caaRaw -join " ")
+            Status   = "FOUND"
+            Provider = ""
+        })
+    } else {
+        Write-Host "No CAA record found for $domain" -ForegroundColor Yellow
+        $script:excelResults.Add([PSCustomObject]@{
+            Section  = "Main Domain - CAA (SSL Certificate)"
+            Record   = "CAA"
+            Hostname = $domain
+            Value    = "Not Found"
+            Status   = "NOT FOUND"
+            Provider = ""
+        })
+    }
+} catch {
+    Write-Host "No CAA record found for $domain" -ForegroundColor Yellow
+}
 
 foreach ($section in $sections) {
     Write-Host "`n==============================" -ForegroundColor Green
