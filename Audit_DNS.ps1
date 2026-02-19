@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+
+    
+
+    <title>
+      File Browser
+    </title>
+
+    <meta name="robots" content="noindex,nofollow" />
+
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/static/img/icons/favicon.svg"
+    />
+    <link rel="shortcut icon" href="/static/img/icons/favicon.ico" />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/static/img/icons/apple-touch-icon.png"
+    />
+    <meta name="apple-mobile-web-app-title" content="File Browser" />
+
+    <!-- Add to home screen for Android and modern mobile browsers -->
+    <link
+      rel="manifest"
+      id="manifestPlaceholder"
+      crossorigin="use-credentials"
+    />
+    <meta
+      name="theme-color"
+      content="#2979ff"
+    />
+
+    <!-- Inject Some Variables and generate the manifest json -->
+    <script>
+      // We can assign JSON directly
+      window.FileBrowser = {"AuthMethod":"json","BaseURL":"","CSS":false,"Color":"","DisableExternal":false,"DisableUsedPercentage":false,"EnableExec":false,"EnableThumbs":true,"HideLoginButton":true,"LoginPage":true,"Name":"","NoAuth":false,"ReCaptcha":false,"ResizePreview":true,"Signup":false,"StaticURL":"/static","Theme":"","TusSettings":{"chunkSize":10485760,"retryCount":5},"Version":"2.49.0"};
+      // Global function to prepend static url
+      window.__prependStaticUrl = (url) => {
+        return `${window.FileBrowser.StaticURL}/${url.replace(/^\/+/, "")}`;
+      };
+      var dynamicManifest = {
+        name: window.FileBrowser.Name || "File Browser",
+        short_name: window.FileBrowser.Name || "File Browser",
+        icons: [
+          {
+            src: window.__prependStaticUrl("/img/icons/android-chrome-192x192.png"),
+            sizes: "192x192",
+            type: "image/png",
+          },
+          {
+            src: window.__prependStaticUrl("/img/icons/android-chrome-512x512.png"),
+            sizes: "512x512",
+            type: "image/png",
+          },
+        ],
+        start_url: window.location.origin + window.FileBrowser.BaseURL,
+        display: "standalone",
+        background_color: "#ffffff",
+        theme_color: window.FileBrowser.Color || "#455a64",
+      };
+
+      const stringManifest = JSON.stringify(dynamicManifest);
+      const blob = new Blob([stringManifest], { type: "application/json" });
+      const manifestURL = URL.createObjectURL(blob);
+      document
+        .querySelector("#manifestPlaceholder")
+        .setAttribute("href", manifestURL);
+    </script>
+
+    <style>
+      #loading {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+        z-index: 9999;
+        transition: 0.1s ease opacity;
+        -webkit-transition: 0.1s ease opacity;
+      }
+
+      #loading.done {
+        opacity: 0;
+      }
+
+      #loading .spinner {
+        width: 70px;
+        text-align: center;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+      }
+
+      #loading .spinner > div {
+        width: 18px;
+        height: 18px;
+        background-color: #333;
+        border-radius: 100%;
+        display: inline-block;
+        animation: sk-bouncedelay 1.4s infinite ease-in-out both;
+      }
+
+      #loading .spinner .bounce1 {
+        animation-delay: -0.32s;
+      }
+
+      #loading .spinner .bounce2 {
+        animation-delay: -0.16s;
+      }
+
+      @keyframes sk-bouncedelay {
+        0%,
+        80%,
+        100% {
+          transform: scale(0);
+        }
+        40% {
+          transform: scale(1);
+        }
+      }
+    </style>
+    <script type="module" crossorigin src="/static/assets/index-QsF47SG0.js"></script>
+    <link rel="modulepreload" crossorigin href="/static/assets/dayjs-wHa7IWmd.js">
+    <link rel="modulepreload" crossorigin href="/static/assets/i18n-BFwzKjre.js">
+    <link rel="stylesheet" crossorigin href="/static/assets/index-XwkXbqHC.css">
+    <script type="module">import.meta.url;import("_").catch(()=>1);(async function*(){})().next();window.__vite_is_modern_browser=true</script>
+    <script type="module">!function(){if(window.__vite_is_modern_browser)return;console.warn("vite: loading legacy chunks, syntax error above and the same error below should be ignored");var e=document.getElementById("vite-legacy-polyfill"),n=document.createElement("script");n.src=e.src,n.onload=function(){System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))},document.body.appendChild(n)}();</script>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="loading">
+      <div class="spinner">
+        <div class="bounce1"></div>
+        <div class="bounce2"></div>
+        <div class="bounce3"></div>
+      </div>
+    </div>
+
+
+    
+    <script nomodule>!function(){var e=document,t=e.createElement("script");if(!("noModule"in t)&&"onbeforeload"in t){var n=!1;e.addEventListener("beforeload",(function(e){if(e.target===t)n=!0;else if(!e.target.hasAttribute("nomodule")||!n)return;e.preventDefault()}),!0),t.type="module",t.src=".",e.head.appendChild(t),t.remove()}}();</script>
+    <script nomodule crossorigin id="vite-legacy-polyfill" src="/static/assets/polyfills-legacy-CpTeToob.js"></script>
+    <script nomodule crossorigin id="vite-legacy-entry" data-src="/static/assets/index-legacy-D9sPn-jY.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
+  </body>
+</html>
