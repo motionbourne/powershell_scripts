@@ -189,7 +189,7 @@ Write-Host "============================================`n" -ForegroundColor Mag
 # ---- Export to Excel with colour coding ----
 Write-Host "Exporting to Excel..." -ForegroundColor Cyan
 
-$excel = $excelResults | Export-Excel -Path $outputXlsx -WorksheetName "DNS Audit" -AutoSize -AutoFilter -FreezeTopRow -BoldTopRow -PassThru
+$excel = $excelResults | Export-Excel -Path $outputXlsx -WorksheetName "DNS Audit" -AutoSize -FreezeTopRow -BoldTopRow -PassThru
 
 $ws = $excel.Workbook.Worksheets["DNS Audit"]
 
@@ -222,6 +222,10 @@ $ws.Cells["A3"].Value = "Date: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')   |   D
 $ws.Cells["A1:F1"].Merge = $true
 $ws.Cells["A2:F2"].Merge = $true
 $ws.Cells["A3:F3"].Merge = $true
+
+# Apply AutoFilter and FreezePane to row 4 (after title rows)
+$ws.Cells["A4:F4"].AutoFilter = $true
+$ws.View.FreezePanes(5, 1)
 
 Close-ExcelPackage $excel
 
