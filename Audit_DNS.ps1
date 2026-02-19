@@ -1,5 +1,12 @@
 $domain = Read-Host "Enter domain to audit"
 
+# Output file setup
+$outputFolder = "C:\tools"
+if (-not (Test-Path $outputFolder)) { New-Item -ItemType Directory -Path $outputFolder | Out-Null }
+$timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+$outputFile = "$outputFolder\DNS_Audit_${domain}_${timestamp}.txt"
+Start-Transcript -Path $outputFile | Out-Null
+
 function Get-DNSProvider {
     param($domain)
     try {
@@ -136,3 +143,6 @@ foreach ($section in $sections) {
 Write-Host "`n============================================" -ForegroundColor Magenta
 Write-Host "   AUDIT COMPLETE" -ForegroundColor Magenta
 Write-Host "============================================`n" -ForegroundColor Magenta
+
+Stop-Transcript | Out-Null
+Write-Host "`nReport saved to: $outputFile" -ForegroundColor Magenta
