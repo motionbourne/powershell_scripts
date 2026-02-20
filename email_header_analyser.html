@@ -402,7 +402,13 @@ function getHeader(headers, name) {
 }
 
 function getAllHeaders(headers, name) {
-  const regex = new RegExp(`^${name}:\\s*(.+)`, 'gim');
+  // Unfold multi-line headers (RFC 2822: newline followed by whitespace = continuation)
+  const unfolded = headers.replace(/
+?
+([ 	]+)/g, ' ');
+  const regex = new RegExp(`^${name}:\s*(.+)`, 'gim');
+  return [...unfolded.matchAll(regex)].map(m => m[1].trim());
+}:\\s*(.+)`, 'gim');
   return [...headers.matchAll(regex)].map(m => m[1].trim());
 }
 
