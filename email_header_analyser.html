@@ -406,21 +406,52 @@ function getAllHeaders(headers, name) {
   return [...headers.matchAll(regex)].map(m => m[1].trim());
 }
 
+function getBestAuthHeaders(headers) {
+  // Get all Authentication-Results and ARC-Authentication-Results headers
+  const authHeaders = getAllHeaders(headers, 'Authentication-Results');
+  const arcHeaders  = getAllHeaders(headers, 'ARC-Authentication-Results');
+
+  // Filter out Microsoft internal headers that say dkim=none/dmarc=none
+  // These are added before the email leaves the tenant and are not the final result
+  const externalAuth = authHeaders.filter(h => {
+    const lower = h.toLowerCase();
+    // Skip headers from internal Microsoft servers that report none
+    const isInternalNone = lower.includes('dkim=none') && lower.includes('dmarc=none');
+    return !isInternalNone;
+  });
+
+  // Prefer external auth headers, fall back to ARC headers, then all headers
+  if (externalAuth.length > 0) return externalAuth;
+  if (arcHeaders.length > 0) return arcHeaders;
+  return authHeaders;
+}
+
 function parseAuthResult(authResults, protocol) {
   if (!authResults || !authResults.length) return { result: 'none', detail: '' };
-  const combined = authResults.join(' ').toLowerCase();
-  const match = combined.match(new RegExp(`${protocol}=([\\w-]+)`, 'i'));
-  const result = match ? match[1].toLowerCase() : 'none';
-  let detail = '';
-  if (protocol === 'dkim') {
-    const d = combined.match(/dkim=\w+[^;]*header\.d=([^\s;]+)/i);
-    if (d) detail = d[1];
+
+  // Try each header individually — use the first one that has a real result
+  for (const header of authResults) {
+    const lower = header.toLowerCase();
+    const match = lower.match(new RegExp(`${protocol}=([\\w-]+)`, 'i'));
+    if (!match) continue;
+    const result = match[1].toLowerCase();
+    // Skip 'none' results unless it's the only one we have
+    if (result === 'none' && authResults.length > 1) continue;
+
+    let detail = '';
+    if (protocol === 'dkim') {
+      const d = lower.match(/dkim=\w+[^;]*header\.[id]=([^\s;]+)/i) ||
+                lower.match(/header\.i=@?([^\s;]+)/i);
+      if (d) detail = d[1];
+    }
+    if (protocol === 'spf') {
+      const s = lower.match(/smtp\.mailfrom=([^\s;]+)/i) || lower.match(/smtp\.helo=([^\s;]+)/i);
+      if (s) detail = s[1];
+    }
+    return { result, detail };
   }
-  if (protocol === 'spf') {
-    const s = combined.match(/smtp\.mailfrom=([^\s;]+)/i) || combined.match(/smtp\.helo=([^\s;]+)/i);
-    if (s) detail = s[1];
-  }
-  return { result, detail };
+
+  return { result: 'none', detail: '' };
 }
 
 function setAuthCard(cardId, resultId, detailId, result, detail) {
@@ -493,7 +524,7 @@ function analyseHeaders() {
   const sender     = getHeader(headers, 'Sender');
 
   // Auth
-  const allAuthHeaders = [...getAllHeaders(headers, 'Authentication-Results'), ...getAllHeaders(headers, 'ARC-Authentication-Results')];
+  const allAuthHeaders = getBestAuthHeaders(headers);
   const spfData  = parseAuthResult(allAuthHeaders, 'spf');
   const dkimData = parseAuthResult(allAuthHeaders, 'dkim');
   const dmarcData= parseAuthResult(allAuthHeaders, 'dmarc');
