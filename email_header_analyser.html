@@ -402,11 +402,24 @@ function getHeader(headers, name) {
 }
 
 function getAllHeaders(headers, name) {
-  // Unfold multi-line headers (RFC 2822: newline followed by whitespace = continuation)
-  const unfolded = headers.replace(/
-?
-([ 	]+)/g, ' ');
-  const regex = new RegExp(`^${name}:\s*(.+)`, 'gim');
+  var lines = headers.split('
+');
+  var result = [];
+  var current = null;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].replace(/
+$/, '');
+    if (line.length > 0 && (line[0] === ' ' || line[0] === '	')) {
+      if (current !== null) current += ' ' + line.trim();
+    } else {
+      if (current !== null) result.push(current);
+      var nameMatch = new RegExp('^' + name + ':\s*(.*)', 'i').exec(line);
+      current = nameMatch ? nameMatch[1].trim() : null;
+    }
+  }
+  if (current !== null) result.push(current);
+  return result;
+}:\s*(.+)`, 'gim');
   return [...unfolded.matchAll(regex)].map(m => m[1].trim());
 }:\\s*(.+)`, 'gim');
   return [...headers.matchAll(regex)].map(m => m[1].trim());
