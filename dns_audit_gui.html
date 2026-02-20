@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DNS Audit Tool</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1a2235;
+    --border: #1e2d45;
+    --accent: #00d4ff;
+    --accent2: #7c3aed;
+    --green: #10b981;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --blue: #3b82f6;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-display: 'Syne', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-display);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .glow-orb {
+    position: fixed;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.12;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .glow-orb-1 { background: var(--accent); top: -200px; right: -100px; }
+  .glow-orb-2 { background: var(--accent2); bottom: -200px; left: -100px; }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 48px;
+    animation: fadeDown 0.6s ease both;
+  }
+
+  .logo {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+
+  header h1 {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  header span {
+    display: block;
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 400;
+    font-family: var(--font-mono);
+    margin-top: 2px;
+  }
+
+  /* Search bar */
+  .search-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 32px;
+    animation: fadeUp 0.6s ease 0.1s both;
+  }
+
+  .search-label {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+  }
+
+  .search-row {
+    display: flex;
+    gap: 12px;
+  }
+
+  .search-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 20px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .search-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0,212,255,0.1);
+  }
+
+  .search-input::placeholder { color: var(--muted); }
+
+  .btn-audit {
+    background: linear-gradient(135deg, var(--accent), #0099cc);
+    border: none;
+    border-radius: 10px;
+    padding: 14px 28px;
+    color: #000;
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn-audit:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0,212,255,0.3); }
+  .btn-audit:active { transform: translateY(0); }
+  .btn-audit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  /* Progress */
+  .progress-bar-wrap {
+    height: 3px;
+    background: var(--border);
+    border-radius: 99px;
+    margin-top: 20px;
+    overflow: hidden;
+    display: none;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 99px;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  .progress-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 10px;
+    display: none;
+  }
+
+  /* Stats row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+    animation: fadeUp 0.6s ease 0.2s both;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    transition: border-color 0.3s;
+  }
+
+  .stat-card.found { border-color: rgba(16,185,129,0.3); }
+  .stat-card.notfound { border-color: rgba(239,68,68,0.3); }
+  .stat-card.info { border-color: rgba(59,130,246,0.3); }
+  .stat-card.total { border-color: rgba(0,212,255,0.3); }
+
+  .stat-number {
+    font-size: 32px;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .stat-card.found .stat-number { color: var(--green); }
+  .stat-card.notfound .stat-number { color: var(--red); }
+  .stat-card.info .stat-number { color: var(--blue); }
+  .stat-card.total .stat-number { color: var(--accent); }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-family: var(--font-mono);
+  }
+
+  /* Results */
+  .results-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    animation: fadeUp 0.6s ease 0.3s both;
+  }
+
+  .results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: gap;
+    gap: 12px;
+  }
+
+  .results-title {
+    font-size: 14px;
+    font-family: var(--font-mono);
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+
+  .filter-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .filter-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 14px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
+  .filter-btn.active-green { background: var(--green); border-color: var(--green); color: #000; font-weight: 700; }
+  .filter-btn.active-red { background: var(--red); border-color: var(--red); color: #fff; font-weight: 700; }
+
+  .results-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .results-table th {
+    text-align: left;
+    padding: 12px 24px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .results-table td {
+    padding: 14px 24px;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(30,45,69,0.5);
+    vertical-align: top;
+  }
+
+  .results-table tr:last-child td { border-bottom: none; }
+
+  .results-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .section-name {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .record-type {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  .hostname {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+    word-break: break-all;
+  }
+
+  .value {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text);
+    word-break: break-all;
+    max-width: 340px;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 99px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+
+  .badge-found { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+  .badge-notfound { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .badge-info { background: rgba(59,130,246,0.15); color: var(--blue); border: 1px solid rgba(59,130,246,0.3); }
+  .badge-checking { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
+
+  /* Export buttons */
+  .export-row {
+    display: flex;
+    gap: 10px;
+    padding: 20px 24px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .btn-export {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 20px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-export:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 80px 24px;
+    color: var(--muted);
+  }
+
+  .empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.4;
+  }
+
+  .empty-state h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text);
+    opacity: 0.5;
+  }
+
+  .empty-state p {
+    font-size: 13px;
+    font-family: var(--font-mono);
+  }
+
+  /* Provider banner */
+  .provider-banner {
+    background: linear-gradient(135deg, rgba(0,212,255,0.08), rgba(124,58,237,0.08));
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 10px;
+    padding: 14px 20px;
+    margin-top: 20px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    display: none;
+    animation: fadeUp 0.4s ease both;
+  }
+
+  .provider-banner strong { color: var(--accent); }
+
+  /* Animations */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(0,0,0,0.3);
+    border-top-color: #000;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  /* Row animation */
+  .result-row {
+    animation: fadeUp 0.3s ease both;
+  }
+
+  @media (max-width: 768px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .search-row { flex-direction: column; }
+    .results-header { flex-direction: column; align-items: flex-start; }
+    .results-table th:nth-child(3), .results-table td:nth-child(3) { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="glow-orb glow-orb-1"></div>
+<div class="glow-orb glow-orb-2"></div>
+
+<div class="container">
+
+  <header>
+    <div class="logo">⬡</div>
+    <div>
+      <h1>DNS Audit Tool</h1>
+      <span>Comprehensive domain record analysis</span>
+    </div>
+  </header>
+
+  <!-- Search -->
+  <div class="search-card">
+    <div class="search-label">Target Domain</div>
+    <div class="search-row">
+      <input class="search-input" id="domainInput" type="text" placeholder="e.g. motionbourne.com" autocomplete="off" spellcheck="false" />
+      <button class="btn-audit" id="auditBtn" onclick="runAudit()">
+        <span id="btnText">Run Audit</span>
+      </button>
+    </div>
+    <div class="progress-bar-wrap" id="progressWrap">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="progress-label" id="progressLabel"></div>
+    <div class="provider-banner" id="providerBanner"></div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card total">
+      <div class="stat-number" id="statTotal">—</div>
+      <div class="stat-label">Total Checks</div>
+    </div>
+    <div class="stat-card found">
+      <div class="stat-number" id="statFound">—</div>
+      <div class="stat-label">Found</div>
+    </div>
+    <div class="stat-card notfound">
+      <div class="stat-number" id="statNotFound">—</div>
+      <div class="stat-label">Not Found</div>
+    </div>
+    <div class="stat-card info">
+      <div class="stat-number" id="statInfo">—</div>
+      <div class="stat-label">Info</div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="results-card">
+    <div class="results-header">
+      <div class="results-title">Results</div>
+      <div class="filter-row">
+        <button class="filter-btn active" id="filterAll" onclick="setFilter('all')">All</button>
+        <button class="filter-btn" id="filterFound" onclick="setFilter('found')">Found</button>
+        <button class="filter-btn" id="filterNotFound" onclick="setFilter('notfound')">Not Found</button>
+      </div>
+    </div>
+
+    <div id="tableWrap">
+      <div class="empty-state">
+        <div class="empty-icon">◈</div>
+        <h3>No audit run yet</h3>
+        <p>Enter a domain above and click Run Audit</p>
+      </div>
+    </div>
+
+    <div class="export-row" id="exportRow" style="display:none">
+      <button class="btn-export" onclick="exportCSV()">⬇ Export CSV</button>
+      <button class="btn-export" onclick="exportTXT()">⬇ Export TXT</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const DNS_API = 'https://dns.google/resolve';
+let allResults = [];
+let currentFilter = 'all';
+let auditDomain = '';
+
+const checks = [
+  { section: 'Main Domain - A Record',                 type: 'A',     host: d => d },
+  { section: 'Main Domain - AAAA (IPv6)',               type: 'AAAA',  host: d => d },
+  { section: 'Main Domain - MX (Mail)',                 type: 'MX',    host: d => d },
+  { section: 'Main Domain - TXT (SPF etc)',             type: 'TXT',   host: d => d },
+  { section: 'Main Domain - NS (Nameservers)',          type: 'NS',    host: d => d },
+  { section: 'Main Domain - SOA',                       type: 'SOA',   host: d => d },
+  { section: 'Main Domain - CAA (SSL Certificate)',     type: 'CAA',   host: d => d },
+  { section: 'WWW Record',                              type: 'CNAME', host: d => `www.${d}` },
+  { section: 'FTP Record',                              type: 'A',     host: d => `ftp.${d}` },
+  { section: 'VPN Record',                              type: 'A',     host: d => `vpn.${d}` },
+  { section: 'Mail Record',                             type: 'A',     host: d => `mail.${d}` },
+  { section: 'SMTP Record',                             type: 'A',     host: d => `smtp.${d}` },
+  { section: 'IMAP Record',                             type: 'A',     host: d => `imap.${d}` },
+  { section: 'POP Record',                              type: 'A',     host: d => `pop.${d}` },
+  { section: 'DMARC',                                   type: 'TXT',   host: d => `_dmarc.${d}` },
+  { section: 'DKIM - General',                          type: 'TXT',   host: d => `_domainkey.${d}` },
+  { section: 'DKIM - Mailchimp (k3)',                   type: 'CNAME', host: d => `k3._domainkey.${d}` },
+  { section: 'DKIM - Microsoft Selector1',              type: 'CNAME', host: d => `selector1._domainkey.${d}` },
+  { section: 'DKIM - Microsoft Selector2',              type: 'CNAME', host: d => `selector2._domainkey.${d}` },
+  { section: 'DKIM - Google Workspace',                 type: 'TXT',   host: d => `google._domainkey.${d}` },
+  { section: 'MTA-STS',                                 type: 'TXT',   host: d => `_mta-sts.${d}` },
+  { section: 'TLS Reporting',                           type: 'TXT',   host: d => `_smtp._tls.${d}` },
+  { section: 'Autodiscover (Microsoft 365)',            type: 'CNAME', host: d => `autodiscover.${d}` },
+  { section: 'Microsoft Online ID',                     type: 'CNAME', host: d => `msoid.${d}` },
+  { section: 'Enterprise Registration (M365)',          type: 'CNAME', host: d => `enterpriseregistration.${d}` },
+  { section: 'Enterprise Enrollment (MDM)',             type: 'CNAME', host: d => `enterpriseenrollment.${d}` },
+  { section: 'Lync Discover (Teams/SfB)',               type: 'CNAME', host: d => `lyncdiscover.${d}` },
+  { section: 'SIP Record (Teams Voice)',                type: 'CNAME', host: d => `sip.${d}` },
+  { section: 'SIP TLS (Teams Voice)',                   type: 'SRV',   host: d => `_sip._tls.${d}` },
+  { section: 'SIP Federation (Teams)',                  type: 'SRV',   host: d => `_sipfederationtls._tcp.${d}` },
+];
+
+async function queryDNS(hostname, type) {
+  try {
+    const res = await fetch(`${DNS_API}?name=${encodeURIComponent(hostname)}&type=${encodeURIComponent(type)}`);
+    const data = await res.json();
+    if (data.Answer && data.Answer.length > 0) {
+      return data.Answer.map(a => a.data).join('\n');
+    }
+    return null;
+  } catch(e) {
+    return null;
+  }
+}
+
+async function getProvider(domain) {
+  const ns = await queryDNS(domain, 'NS');
+  if (!ns) return null;
+  const firstNS = ns.split('\n')[0].toLowerCase().replace(/\.$/, '');
+  const parts = firstNS.split('.');
+  const root = parts.length >= 2 ? `${parts[parts.length-2]}.${parts[parts.length-1]}` : firstNS;
+  try {
+    const rdap = await fetch(`https://rdap.org/domain/${root}`);
+    const data = await rdap.json();
+    let provider = 'Unknown';
+    if (data.entities) {
+      for (const entity of data.entities) {
+        if (entity.vcardArray) {
+          for (const vcard of entity.vcardArray[1]) {
+            if (vcard[0] === 'fn' || vcard[0] === 'org') {
+              provider = vcard[3]; break;
+            }
+          }
+        }
+        if (provider !== 'Unknown') break;
+      }
+    }
+    return { provider, root, nameservers: ns.split('\n').join(', ') };
+  } catch(e) {
+    return { provider: 'Unknown', root, nameservers: ns.split('\n').join(', ') };
+  }
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => {
+    b.className = 'filter-btn';
+  });
+  if (f === 'all') document.getElementById('filterAll').className = 'filter-btn active';
+  if (f === 'found') document.getElementById('filterFound').className = 'filter-btn active-green';
+  if (f === 'notfound') document.getElementById('filterNotFound').className = 'filter-btn active-red';
+  renderTable();
+}
+
+function renderTable() {
+  const filtered = allResults.filter(r => {
+    if (currentFilter === 'all') return true;
+    if (currentFilter === 'found') return r.status === 'FOUND' || r.status === 'INFO';
+    if (currentFilter === 'notfound') return r.status === 'NOT FOUND';
+    return true;
+  });
+
+  if (filtered.length === 0 && allResults.length === 0) {
+    document.getElementById('tableWrap').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">◈</div>
+        <h3>No audit run yet</h3>
+        <p>Enter a domain above and click Run Audit</p>
+      </div>`;
+    return;
+  }
+
+  let html = `<table class="results-table">
+    <thead><tr>
+      <th>Section</th>
+      <th>Type</th>
+      <th>Hostname</th>
+      <th>Value</th>
+      <th>Status</th>
+    </tr></thead><tbody>`;
+
+  filtered.forEach((r, i) => {
+    const badge = r.status === 'FOUND' ? 'badge-found' :
+                  r.status === 'NOT FOUND' ? 'badge-notfound' : 'badge-info';
+    const valueDisplay = r.value && r.value !== 'Not Found'
+      ? r.value.replace(/\n/g, '<br>')
+      : '<span style="color:var(--muted)">—</span>';
+    html += `<tr class="result-row" style="animation-delay:${i * 0.02}s">
+      <td><div class="section-name">${r.section}</div><div class="record-type">${r.type}</div></td>
+      <td><span class="badge badge-info">${r.type}</span></td>
+      <td><div class="hostname">${r.hostname}</div></td>
+      <td><div class="value">${valueDisplay}</div></td>
+      <td><span class="badge ${badge}">${r.status}</span></td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('tableWrap').innerHTML = html;
+}
+
+function updateStats() {
+  const found = allResults.filter(r => r.status === 'FOUND').length;
+  const notFound = allResults.filter(r => r.status === 'NOT FOUND').length;
+  const info = allResults.filter(r => r.status === 'INFO').length;
+  document.getElementById('statTotal').textContent = allResults.length;
+  document.getElementById('statFound').textContent = found;
+  document.getElementById('statNotFound').textContent = notFound;
+  document.getElementById('statInfo').textContent = info;
+}
+
+async function runAudit() {
+  const domain = document.getElementById('domainInput').value.trim().toLowerCase();
+  if (!domain) return;
+
+  auditDomain = domain;
+  allResults = [];
+  currentFilter = 'all';
+
+  const btn = document.getElementById('auditBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Auditing...';
+
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('progressLabel').style.display = 'block';
+  document.getElementById('providerBanner').style.display = 'none';
+  document.getElementById('exportRow').style.display = 'none';
+
+  document.querySelectorAll('.filter-btn').forEach(b => b.className = 'filter-btn');
+  document.getElementById('filterAll').className = 'filter-btn active';
+
+  document.getElementById('statTotal').textContent = '—';
+  document.getElementById('statFound').textContent = '—';
+  document.getElementById('statNotFound').textContent = '—';
+  document.getElementById('statInfo').textContent = '—';
+
+  document.getElementById('tableWrap').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon" style="animation: spin 1s linear infinite; display:inline-block">◈</div>
+      <h3 style="opacity:1">Auditing ${domain}...</h3>
+      <p>Checking DNS records via Google DNS</p>
+    </div>`;
+
+  // Provider lookup
+  document.getElementById('progressLabel').textContent = 'Detecting DNS provider...';
+  const providerData = await getProvider(domain);
+  if (providerData) {
+    document.getElementById('providerBanner').style.display = 'block';
+    document.getElementById('providerBanner').innerHTML =
+      `DNS Provider: <strong>${providerData.provider}</strong> &nbsp;|&nbsp; Root: <strong>${providerData.root}</strong> &nbsp;|&nbsp; Nameservers: ${providerData.nameservers}`;
+    allResults.push({ section: 'DNS Provider', type: 'NS', hostname: providerData.root, value: providerData.nameservers, status: 'INFO' });
+  }
+
+  // Run all checks
+  for (let i = 0; i < checks.length; i++) {
+    const check = checks[i];
+    const hostname = check.host(domain);
+    document.getElementById('progressLabel').textContent = `Checking: ${check.section}`;
+    const pct = ((i + 1) / checks.length) * 100;
+    document.getElementById('progressBar').style.width = pct + '%';
+
+    const value = await queryDNS(hostname, check.type);
+    allResults.push({
+      section: check.section,
+      type: check.type,
+      hostname: hostname,
+      value: value || 'Not Found',
+      status: value ? 'FOUND' : 'NOT FOUND'
+    });
+
+    updateStats();
+    renderTable();
+  }
+
+  document.getElementById('progressLabel').textContent = 'Audit complete!';
+  document.getElementById('exportRow').style.display = 'flex';
+
+  btn.disabled = false;
+  btn.innerHTML = 'Run Audit';
+}
+
+function exportCSV() {
+  let csv = 'Section,Type,Hostname,Value,Status\n';
+  allResults.forEach(r => {
+    const val = (r.value || '').replace(/\n/g, ' ').replace(/"/g, '""');
+    csv += `"${r.section}","${r.type}","${r.hostname}","${val}","${r.status}"\n`;
+  });
+  download(`DNS_Audit_${auditDomain}_${new Date().toISOString().slice(0,10)}.csv`, csv, 'text/csv');
+}
+
+function exportTXT() {
+  let txt = `DNS AUDIT REPORT\n`;
+  txt += `Domain  : ${auditDomain}\n`;
+  txt += `Date    : ${new Date().toLocaleString()}\n`;
+  txt += `${'='.repeat(60)}\n\n`;
+  allResults.forEach(r => {
+    txt += `${r.section} [${r.type}]\n`;
+    txt += `Hostname : ${r.hostname}\n`;
+    txt += `Value    : ${r.value}\n`;
+    txt += `Status   : ${r.status}\n`;
+    txt += `${'-'.repeat(40)}\n`;
+  });
+  download(`DNS_Audit_${auditDomain}_${new Date().toISOString().slice(0,10)}.txt`, txt, 'text/plain');
+}
+
+function download(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+
+document.getElementById('domainInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runAudit();
+});
+</script>
+</body>
+</html>
