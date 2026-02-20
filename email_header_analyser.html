@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email Header Analyser</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Epilogue:wght@400;600;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f2eb;
+    --surface: #faf8f3;
+    --surface2: #eee9de;
+    --border: #d4cfc4;
+    --ink: #1a1814;
+    --muted: #8a8278;
+    --accent: #c4410c;
+    --green: #1a7a4a;
+    --green-bg: #e8f5ee;
+    --red: #c4410c;
+    --red-bg: #fdf0eb;
+    --yellow: #9a6700;
+    --yellow-bg: #fef9e7;
+    --blue: #1d6fa4;
+    --blue-bg: #e8f2fa;
+    --scam-bg: #fff0f0;
+    --scam-border: #c4410c;
+    --font-mono: 'IBM Plex Mono', monospace;
+    --font-display: 'Epilogue', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-display);
+    min-height: 100vh;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c4b89a' fill-opacity='0.12'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  .container { max-width: 1000px; margin: 0 auto; padding: 48px 24px; }
+
+  header {
+    margin-bottom: 48px;
+    animation: fadeDown 0.5s ease both;
+    border-bottom: 3px solid var(--ink);
+    padding-bottom: 24px;
+  }
+  .header-eyebrow { font-family: var(--font-mono); font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: 3px; margin-bottom: 8px; }
+  header h1 { font-size: 42px; font-weight: 900; letter-spacing: -2px; line-height: 1; }
+  header p { margin-top: 10px; font-size: 14px; color: var(--muted); font-family: var(--font-mono); }
+
+  /* SCAM ALERT BANNER */
+  .scam-alert {
+    display: none;
+    background: #1a0000;
+    border: 3px solid var(--red);
+    border-radius: 4px;
+    padding: 24px 28px;
+    margin-bottom: 28px;
+    animation: scamPulse 1s ease both;
+    box-shadow: 8px 8px 0 var(--red);
+  }
+  .scam-alert.show { display: block; }
+  .scam-alert-header { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .scam-icon { font-size: 32px; animation: shake 0.5s ease 0.3s both; }
+  .scam-title { font-size: 26px; font-weight: 900; color: #ff4444; text-transform: uppercase; letter-spacing: 2px; }
+  .scam-subtitle { font-family: var(--font-mono); font-size: 12px; color: #ff9999; }
+  .scam-reasons { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .scam-reason { font-family: var(--font-mono); font-size: 12px; color: #ffcccc; display: flex; gap: 8px; }
+  .scam-reason::before { content: '›'; color: #ff4444; flex-shrink: 0; }
+
+  /* Safe banner */
+  .safe-banner {
+    display: none;
+    background: #001a0a;
+    border: 3px solid var(--green);
+    border-radius: 4px;
+    padding: 20px 28px;
+    margin-bottom: 28px;
+    box-shadow: 6px 6px 0 var(--green);
+    animation: fadeUp 0.5s ease both;
+  }
+  .safe-banner.show { display: flex; align-items: center; gap: 16px; }
+  .safe-title { font-size: 20px; font-weight: 900; color: #44ff88; text-transform: uppercase; letter-spacing: 2px; }
+  .safe-subtitle { font-family: var(--font-mono); font-size: 11px; color: #88ffbb; margin-top: 3px; }
+
+  /* Input card */
+  .input-card {
+    background: var(--surface);
+    border: 2px solid var(--ink);
+    border-radius: 4px;
+    padding: 32px;
+    margin-bottom: 32px;
+    box-shadow: 6px 6px 0 var(--ink);
+    animation: fadeUp 0.5s ease 0.1s both;
+  }
+  .input-label { font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--accent); margin-bottom: 10px; }
+  .input-hint { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-bottom: 14px; line-height: 1.6; }
+
+  textarea {
+    width: 100%; min-height: 180px;
+    background: var(--bg); border: 2px solid var(--border); border-radius: 4px;
+    padding: 16px; font-family: var(--font-mono); font-size: 12px; color: var(--ink);
+    resize: vertical; outline: none; transition: border-color 0.2s; line-height: 1.6;
+  }
+  textarea:focus { border-color: var(--ink); }
+  textarea::placeholder { color: var(--muted); }
+
+  .btn-row { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+
+  .btn-analyse {
+    background: var(--ink); border: 2px solid var(--ink); border-radius: 4px;
+    padding: 13px 28px; color: var(--bg); font-family: var(--font-display);
+    font-size: 14px; font-weight: 800; cursor: pointer; transition: all 0.15s;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .btn-analyse:hover { background: var(--accent); border-color: var(--accent); transform: translate(-2px,-2px); box-shadow: 4px 4px 0 var(--ink); }
+  .btn-analyse:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .btn-clear {
+    background: transparent; border: 2px solid var(--border); border-radius: 4px;
+    padding: 13px 20px; color: var(--muted); font-family: var(--font-mono);
+    font-size: 12px; cursor: pointer; transition: all 0.15s;
+  }
+  .btn-clear:hover { border-color: var(--ink); color: var(--ink); }
+
+  /* Score */
+  .score-section { display: grid; grid-template-columns: auto 1fr; gap: 24px; margin-bottom: 32px; animation: fadeUp 0.5s ease 0.15s both; }
+  .score-big {
+    background: var(--surface); border: 2px solid var(--ink); border-radius: 4px;
+    box-shadow: 6px 6px 0 var(--ink); padding: 28px 36px; text-align: center;
+    min-width: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .score-number { font-size: 64px; font-weight: 900; letter-spacing: -4px; line-height: 1; font-family: var(--font-mono); }
+  .score-number.score-good { color: var(--green); }
+  .score-number.score-warn { color: var(--yellow); }
+  .score-number.score-bad { color: var(--red); }
+  .score-label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); margin-top: 6px; }
+  .score-verdict { font-size: 16px; font-weight: 800; margin-top: 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .score-verdict.good { color: var(--green); }
+  .score-verdict.warn { color: var(--yellow); }
+  .score-verdict.bad { color: var(--red); }
+
+  .auth-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .auth-card { background: var(--surface); border: 2px solid var(--border); border-radius: 4px; padding: 18px 20px; transition: border-color 0.2s; }
+  .auth-card.pass { border-color: var(--green); background: var(--green-bg); }
+  .auth-card.fail { border-color: var(--red); background: var(--red-bg); }
+  .auth-card.warn { border-color: var(--yellow); background: var(--yellow-bg); }
+  .auth-card.unknown { border-color: var(--border); }
+  .auth-name { font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); margin-bottom: 6px; }
+  .auth-result { font-size: 20px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; }
+  .auth-card.pass .auth-result { color: var(--green); }
+  .auth-card.fail .auth-result { color: var(--red); }
+  .auth-card.warn .auth-result { color: var(--yellow); }
+  .auth-card.unknown .auth-result { color: var(--muted); }
+  .auth-detail { font-family: var(--font-mono); font-size: 10px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+
+  /* Sections */
+  .section { margin-bottom: 28px; animation: fadeUp 0.5s ease 0.2s both; }
+  .section-title {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 2px; color: var(--accent);
+    margin-bottom: 14px; display: flex; align-items: center; gap: 10px;
+  }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .info-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 2px solid var(--ink); border-radius: 4px; overflow: hidden; box-shadow: 4px 4px 0 var(--border); }
+  .info-table tr { border-bottom: 1px solid var(--border); }
+  .info-table tr:last-child { border-bottom: none; }
+  .info-table tr:hover td { background: var(--surface2); }
+  .info-table td { padding: 12px 18px; font-size: 13px; vertical-align: top; }
+  .info-table td:first-child { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; width: 180px; border-right: 1px solid var(--border); }
+  .info-table td:last-child { font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
+
+  /* Hops */
+  .hops-list { display: flex; flex-direction: column; gap: 0; }
+  .hop { display: grid; grid-template-columns: 40px 1fr; gap: 0; }
+  .hop-line { display: flex; flex-direction: column; align-items: center; }
+  .hop-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 3px solid var(--bg); outline: 2px solid var(--ink); flex-shrink: 0; margin-top: 16px; z-index: 1; }
+  .hop-connector { width: 2px; flex: 1; background: var(--border); min-height: 20px; }
+  .hop:last-child .hop-connector { display: none; }
+  .hop-card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 14px 18px; margin: 8px 0 8px 12px; }
+  .hop-number { font-family: var(--font-mono); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .hop-server { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--ink); word-break: break-all; }
+  .hop-meta { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .hop-delay { display: inline-block; background: var(--surface2); border: 1px solid var(--border); border-radius: 3px; padding: 1px 8px; font-family: var(--font-mono); font-size: 10px; margin-left: 8px; }
+  .hop-delay.slow { background: var(--red-bg); border-color: var(--red); color: var(--red); }
+  .hop-delay.ok { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+
+  /* Warnings */
+  .warnings-list { display: flex; flex-direction: column; gap: 10px; }
+  .warning-item { display: flex; gap: 12px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 14px 18px; }
+  .warning-item.danger { border-color: var(--red); background: var(--red-bg); }
+  .warning-item.caution { border-color: var(--yellow); background: var(--yellow-bg); }
+  .warning-item.good { border-color: var(--green); background: var(--green-bg); }
+  .warning-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .warning-text { font-size: 13px; font-family: var(--font-mono); }
+  .warning-text strong { font-weight: 700; display: block; margin-bottom: 2px; }
+  .warning-text span { font-size: 11px; color: var(--muted); }
+  .warning-item.danger .warning-text span { color: #a05040; }
+  .warning-item.caution .warning-text span { color: #8a6a00; }
+
+  /* Export */
+  .export-bar { display: flex; gap: 10px; margin-top: 32px; padding-top: 24px; border-top: 2px solid var(--border); }
+  .btn-export { background: var(--surface); border: 2px solid var(--border); border-radius: 4px; padding: 10px 20px; color: var(--ink); font-family: var(--font-mono); font-size: 12px; cursor: pointer; transition: all 0.15s; font-weight: 600; }
+  .btn-export:hover { border-color: var(--ink); transform: translate(-1px,-1px); box-shadow: 2px 2px 0 var(--ink); }
+
+  #results { display: none; }
+
+  @keyframes fadeDown { from { opacity:0; transform:translateY(-16px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes scamPulse { 0% { opacity:0; transform:scale(0.97); } 50% { opacity:1; transform:scale(1.01); } 100% { transform:scale(1); } }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 40%{transform:translateX(6px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
+
+  @media (max-width: 680px) {
+    .auth-grid { grid-template-columns: 1fr; }
+    .score-section { grid-template-columns: 1fr; }
+    header h1 { font-size: 30px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="header-eyebrow">Diagnostic Tool</div>
+    <h1>Email Header<br>Analyser</h1>
+    <p>Paste raw email headers to check SPF, DKIM, DMARC, routing hops, scam detection and spam indicators</p>
+  </header>
+
+  <div class="input-card">
+    <div class="input-label">Raw Email Headers</div>
+    <div class="input-hint">
+      Gmail: Open email → three dots (⋮) → Show original → Copy to clipboard<br>
+      Outlook: Open email → File → Properties → Internet headers<br>
+      Apple Mail: View → Message → All Headers
+    </div>
+    <textarea id="headerInput" placeholder="Paste your raw email headers here..."></textarea>
+    <div class="btn-row">
+      <button class="btn-analyse" id="analyseBtn" onclick="analyseHeaders()">Analyse Headers</button>
+      <button class="btn-clear" onclick="clearAll()">Clear</button>
+    </div>
+  </div>
+
+  <div id="results">
+
+    <!-- SCAM ALERT -->
+    <div class="scam-alert" id="scamAlert">
+      <div class="scam-alert-header">
+        <div class="scam-icon">⚠</div>
+        <div>
+          <div class="scam-title">Likely Scam / Phishing Email</div>
+          <div class="scam-subtitle">Multiple high-risk indicators detected. Do not click links or reply.</div>
+        </div>
+      </div>
+      <div class="scam-reasons" id="scamReasons"></div>
+    </div>
+
+    <!-- SAFE BANNER -->
+    <div class="safe-banner" id="safeBanner">
+      <div style="font-size:28px">✓</div>
+      <div>
+        <div class="safe-title">Email Appears Legitimate</div>
+        <div class="safe-subtitle">No significant scam indicators detected. Always exercise caution.</div>
+      </div>
+    </div>
+
+    <!-- Score + Auth -->
+    <div class="score-section">
+      <div class="score-big">
+        <div class="score-number" id="scoreNum">0</div>
+        <div class="score-label">Trust Score</div>
+        <div class="score-verdict" id="scoreVerdict">—</div>
+      </div>
+      <div class="auth-grid">
+        <div class="auth-card unknown" id="spfCard">
+          <div class="auth-name">SPF</div>
+          <div class="auth-result" id="spfResult">—</div>
+          <div class="auth-detail" id="spfDetail"></div>
+        </div>
+        <div class="auth-card unknown" id="dkimCard">
+          <div class="auth-name">DKIM</div>
+          <div class="auth-result" id="dkimResult">—</div>
+          <div class="auth-detail" id="dkimDetail"></div>
+        </div>
+        <div class="auth-card unknown" id="dmarcCard">
+          <div class="auth-name">DMARC</div>
+          <div class="auth-result" id="dmarcResult">—</div>
+          <div class="auth-detail" id="dmarcDetail"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Email Info -->
+    <div class="section">
+      <div class="section-title">Email Information</div>
+      <table class="info-table" id="infoTable"></table>
+    </div>
+
+    <!-- Sending Server -->
+    <div class="section">
+      <div class="section-title">Sending Server & IP</div>
+      <table class="info-table" id="serverTable"></table>
+    </div>
+
+    <!-- Routing Hops -->
+    <div class="section">
+      <div class="section-title">Routing Hops</div>
+      <div class="hops-list" id="hopsList"></div>
+    </div>
+
+    <!-- Scam Checks -->
+    <div class="section">
+      <div class="section-title">Scam & Phishing Checks</div>
+      <div class="warnings-list" id="scamChecksList"></div>
+    </div>
+
+    <!-- Spam Indicators -->
+    <div class="section">
+      <div class="section-title">Spam & Trust Indicators</div>
+      <div class="warnings-list" id="warningsList"></div>
+    </div>
+
+    <!-- Raw Auth -->
+    <div class="section">
+      <div class="section-title">Raw Authentication Results</div>
+      <table class="info-table" id="rawAuthTable"></table>
+    </div>
+
+    <div class="export-bar">
+      <button class="btn-export" onclick="exportTXT()">⬇ Export TXT</button>
+      <button class="btn-export" onclick="exportCSV()">⬇ Export CSV</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let parsedData = {};
+
+// Free email providers - sending as business is suspicious
+const FREE_PROVIDERS = [
+  'gmail.com','yahoo.com','hotmail.com','outlook.com','live.com',
+  'aol.com','icloud.com','me.com','mac.com','protonmail.com',
+  'proton.me','mail.com','yandex.com','gmx.com','zoho.com',
+  'tutanota.com','fastmail.com','hushmail.com'
+];
+
+// Known brands commonly spoofed
+const KNOWN_BRANDS = [
+  'paypal','amazon','apple','microsoft','google','netflix','ebay',
+  'bank','barclays','lloyds','hsbc','natwest','santander','halifax',
+  'virgin','bt','sky','hmrc','gov','dvla','nhs','royal mail',
+  'dhl','fedex','ups','hermes','evri','dpd','parcel',
+  'instagram','facebook','twitter','linkedin','whatsapp',
+  'spotify','steam','coinbase','binance','crypto'
+];
+
+// Urgency keywords in subject
+const URGENCY_KEYWORDS = [
+  'urgent','immediately','action required','verify now','suspended',
+  'account locked','unusual activity','security alert','confirm now',
+  'final notice','last chance','expires today','act now','limited time',
+  'click here','update required','unusual sign','unauthorised','unauthorized',
+  'compromised','suspicious','validate','reactivate','reset password',
+  'prize','winner','congratulations','free','offer expires','24 hours',
+  'invoice','payment overdue','refund','claim','verify your'
+];
+
+// Lookalike character substitutions
+function detectLookalike(domain) {
+  const subs = { '0':'o','1':'l','l':'1','i':'l','rn':'m','vv':'w','rnicrosoft':'microsoft' };
+  let suspicious = false;
+  const lower = domain.toLowerCase();
+  // Check for numbers replacing letters
+  if (/[0-9]/.test(lower.replace(/\d+\.\w+$/, ''))) suspicious = true;
+  // Check for extra hyphens/dots
+  if ((lower.match(/-/g) || []).length > 2) suspicious = true;
+  // Check for subdomain impersonation e.g. paypal.evil.com
+  const parts = lower.split('.');
+  if (parts.length > 3) {
+    for (const brand of KNOWN_BRANDS) {
+      if (parts.slice(0, -2).some(p => p.includes(brand))) {
+        return { suspicious: true, reason: `Domain uses "${brand}" as a subdomain — classic phishing technique (e.g. paypal.evil.com)` };
+      }
+    }
+  }
+  // Check if brand name is in domain but TLD is unusual
+  for (const brand of KNOWN_BRANDS) {
+    if (lower.includes(brand) && !lower.startsWith(brand + '.') && !lower.startsWith('www.' + brand + '.')) {
+      return { suspicious: true, reason: `Domain contains "${brand}" but does not appear to be the official domain` };
+    }
+  }
+  return { suspicious, reason: suspicious ? 'Domain contains numbers or unusual characters that may impersonate a legitimate brand' : '' };
+}
+
+function getHeader(headers, name) {
+  const regex = new RegExp(`^${name}:\\s*(.+)`, 'im');
+  const match = headers.match(regex);
+  return match ? match[1].trim() : null;
+}
+
+function getAllHeaders(headers, name) {
+  const regex = new RegExp(`^${name}:\\s*(.+)`, 'gim');
+  return [...headers.matchAll(regex)].map(m => m[1].trim());
+}
+
+function parseAuthResult(authResults, protocol) {
+  if (!authResults || !authResults.length) return { result: 'none', detail: '' };
+  const combined = authResults.join(' ').toLowerCase();
+  const match = combined.match(new RegExp(`${protocol}=([\\w-]+)`, 'i'));
+  const result = match ? match[1].toLowerCase() : 'none';
+  let detail = '';
+  if (protocol === 'dkim') {
+    const d = combined.match(/dkim=\w+[^;]*header\.d=([^\s;]+)/i);
+    if (d) detail = d[1];
+  }
+  if (protocol === 'spf') {
+    const s = combined.match(/smtp\.mailfrom=([^\s;]+)/i) || combined.match(/smtp\.helo=([^\s;]+)/i);
+    if (s) detail = s[1];
+  }
+  return { result, detail };
+}
+
+function setAuthCard(cardId, resultId, detailId, result, detail) {
+  const card = document.getElementById(cardId);
+  const resultEl = document.getElementById(resultId);
+  const detailEl = document.getElementById(detailId);
+  card.className = 'auth-card';
+  if (result === 'pass') { card.classList.add('pass'); resultEl.textContent = 'PASS'; }
+  else if (['fail','none','hardfail'].includes(result)) { card.classList.add('fail'); resultEl.textContent = result === 'none' ? 'NOT FOUND' : 'FAIL'; }
+  else if (['softfail','neutral','permerror','temperror'].includes(result)) { card.classList.add('warn'); resultEl.textContent = result.toUpperCase(); }
+  else { card.classList.add('unknown'); resultEl.textContent = result.toUpperCase() || '—'; }
+  detailEl.textContent = detail || '';
+  return result;
+}
+
+function extractIPs(receivedHeaders) {
+  const ips = [];
+  receivedHeaders.forEach(h => {
+    const matches = h.match(/\b(\d{1,3}\.){3}\d{1,3}\b/g);
+    if (matches) matches.forEach(ip => { if (!ips.includes(ip)) ips.push(ip); });
+  });
+  return ips;
+}
+
+function parseReceivedHop(header, index) {
+  return {
+    index,
+    from: header.match(/from\s+([^\s(]+)/i)?.[1] || 'Unknown',
+    by: header.match(/by\s+([^\s(]+)/i)?.[1] || 'Unknown',
+    ip: header.match(/\[(\d{1,3}\.){3}\d{1,3}\]/)?.[0]?.replace(/[\[\]]/g,'') || null,
+    date: header.match(/;\s*(.+)$/m)?.[1]?.trim() || null,
+    with: header.match(/with\s+([^\s;]+)/i)?.[1] || null
+  };
+}
+
+function calcDelay(a, b) {
+  try {
+    return Math.abs(new Date(b.date) - new Date(a.date)) / 1000;
+  } catch(e) { return null; }
+}
+
+function scoreEmail(spf, dkim, dmarc, dangerCount, cautionCount) {
+  let score = 100;
+  if (spf !== 'pass') score -= 25;
+  if (dkim !== 'pass') score -= 25;
+  if (dmarc !== 'pass') score -= 20;
+  score -= dangerCount * 12;
+  score -= cautionCount * 5;
+  return Math.max(0, Math.min(100, score));
+}
+
+function analyseHeaders() {
+  const raw = document.getElementById('headerInput').value.trim();
+  if (!raw) { alert('Please paste email headers first.'); return; }
+
+  const headers = raw;
+
+  // Extract headers
+  const from       = getHeader(headers, 'From');
+  const to         = getHeader(headers, 'To');
+  const subject    = getHeader(headers, 'Subject');
+  const date       = getHeader(headers, 'Date');
+  const messageId  = getHeader(headers, 'Message-ID') || getHeader(headers, 'Message-Id');
+  const replyTo    = getHeader(headers, 'Reply-To');
+  const returnPath = getHeader(headers, 'Return-Path');
+  const xMailer    = getHeader(headers, 'X-Mailer');
+  const xOrigIp    = getHeader(headers, 'X-Originating-IP') || getHeader(headers, 'X-Original-IP');
+  const contentType= getHeader(headers, 'Content-Type');
+  const xSpamScore = getHeader(headers, 'X-Spam-Score') || getHeader(headers, 'X-Spam-Status');
+  const sender     = getHeader(headers, 'Sender');
+
+  // Auth
+  const allAuthHeaders = [...getAllHeaders(headers, 'Authentication-Results'), ...getAllHeaders(headers, 'ARC-Authentication-Results')];
+  const spfData  = parseAuthResult(allAuthHeaders, 'spf');
+  const dkimData = parseAuthResult(allAuthHeaders, 'dkim');
+  const dmarcData= parseAuthResult(allAuthHeaders, 'dmarc');
+  const spfResult  = setAuthCard('spfCard',  'spfResult',  'spfDetail',  spfData.result,  spfData.detail);
+  const dkimResult = setAuthCard('dkimCard', 'dkimResult', 'dkimDetail', dkimData.result, dkimData.detail);
+  const dmarcResult= setAuthCard('dmarcCard','dmarcResult','dmarcDetail',dmarcData.result,dmarcData.detail);
+
+  const receivedHeaders = getAllHeaders(headers, 'Received');
+  const hops = receivedHeaders.map((h,i) => parseReceivedHop(h, i+1)).reverse();
+  const ips  = extractIPs(receivedHeaders);
+  const originatingIP = xOrigIp || (ips.length > 0 ? ips[ips.length-1] : 'Not found');
+
+  // ---- SCAM CHECKS ----
+  const scamChecks  = [];
+  const scamReasons = []; // high confidence scam reasons for banner
+
+  // 1. SPF/DKIM/DMARC failures
+  if (spfResult !== 'pass')  scamChecks.push({ type:'danger', title:'SPF Failed', desc:`SPF returned "${spfResult}". The sending server is not authorised to send for this domain.` });
+  else scamChecks.push({ type:'good', title:'SPF Passed', desc:'Sending server is authorised for this domain.' });
+
+  if (dkimResult !== 'pass') scamChecks.push({ type:'danger', title:'DKIM Failed', desc:`DKIM returned "${dkimResult}". Email signature invalid — content may have been tampered with.` });
+  else scamChecks.push({ type:'good', title:'DKIM Passed', desc:'Email signature verified. Content is intact.' });
+
+  if (dmarcResult !== 'pass') scamChecks.push({ type:'danger', title:'DMARC Failed', desc:`DMARC returned "${dmarcResult}". Domain alignment failed — this email may be spoofed.` });
+  else scamChecks.push({ type:'good', title:'DMARC Passed', desc:'Domain alignment verified.' });
+
+  // 2. Reply-To mismatch
+  if (replyTo && from) {
+    const fromDomain  = from.match(/@([^\s>]+)/)?.[1]?.toLowerCase();
+    const replyDomain = replyTo.match(/@([^\s>]+)/)?.[1]?.toLowerCase();
+    if (fromDomain && replyDomain && fromDomain !== replyDomain) {
+      scamChecks.push({ type:'danger', title:'Reply-To Domain Mismatch', desc:`From domain (${fromDomain}) differs from Reply-To domain (${replyDomain}). A classic phishing technique to redirect your reply to an attacker.` });
+      scamReasons.push(`Reply-To redirects to a different domain (${replyDomain})`);
+    } else {
+      scamChecks.push({ type:'good', title:'Reply-To Matches From Domain', desc:'Reply-To and From domains are consistent.' });
+    }
+  }
+
+  // 3. Display name vs email address mismatch
+  if (from) {
+    const displayMatch = from.match(/^"?([^"<]+)"?\s*</);
+    const emailMatch   = from.match(/<([^>]+)>/);
+    if (displayMatch && emailMatch) {
+      const displayName = displayMatch[1].trim().toLowerCase();
+      const emailAddr   = emailMatch[1].trim().toLowerCase();
+      const emailDomain = emailAddr.split('@')[1] || '';
+      // Check if display name looks like a known brand but email domain doesn't match
+      for (const brand of KNOWN_BRANDS) {
+        if (displayName.includes(brand) && !emailDomain.includes(brand)) {
+          scamChecks.push({ type:'danger', title:'Display Name Spoofing', desc:`Sender displays as "${displayMatch[1].trim()}" but email is from "${emailAddr}". This is a common impersonation trick.` });
+          scamReasons.push(`Display name "${displayMatch[1].trim()}" does not match sending address`);
+          break;
+        }
+      }
+    }
+  }
+
+  // 4. Free email provider impersonating a business
+  if (from) {
+    const emailMatch = from.match(/<([^>]+)>/) || from.match(/([^\s]+@[^\s]+)/);
+    if (emailMatch) {
+      const emailAddr = emailMatch[1].toLowerCase();
+      const domain = emailAddr.split('@')[1] || '';
+      const isFree = FREE_PROVIDERS.some(p => domain === p);
+      if (isFree) {
+        // Check if subject or display name suggests a business
+        const displayMatch = from.match(/^"?([^"<]+)"?\s*</);
+        const displayName = displayMatch ? displayMatch[1].toLowerCase() : '';
+        const looksLikeBusiness = KNOWN_BRANDS.some(b => displayName.includes(b)) ||
+          (subject && KNOWN_BRANDS.some(b => subject.toLowerCase().includes(b)));
+        if (looksLikeBusiness) {
+          scamChecks.push({ type:'danger', title:'Business Impersonation via Free Email', desc:`Email claims to be from a business/brand but was sent from a free email provider (${domain}). Legitimate businesses use their own domain.` });
+          scamReasons.push(`Sent from free provider (${domain}) while impersonating a known brand`);
+        } else {
+          scamChecks.push({ type:'caution', title:'Sent from Free Email Provider', desc:`Email was sent from ${domain}. This is normal for personal emails but suspicious for business communications.` });
+        }
+      } else {
+        scamChecks.push({ type:'good', title:'Custom Domain Used', desc:`Email sent from a custom domain (${domain}), not a free provider.` });
+      }
+    }
+  }
+
+  // 5. Lookalike domain detection
+  if (from) {
+    const emailMatch = from.match(/<([^>]+)>/) || from.match(/([^\s]+@[^\s]+)/);
+    if (emailMatch) {
+      const domain = (emailMatch[1].split('@')[1] || '').toLowerCase().replace(/>$/, '');
+      const lookalike = detectLookalike(domain);
+      if (lookalike.suspicious) {
+        scamChecks.push({ type:'danger', title:'Suspicious / Lookalike Domain', desc:lookalike.reason });
+        scamReasons.push(lookalike.reason);
+      } else {
+        scamChecks.push({ type:'good', title:'No Lookalike Domain Detected', desc:'Sending domain does not appear to be impersonating a known brand.' });
+      }
+    }
+  }
+
+  // 6. Urgency keywords in subject
+  if (subject) {
+    const subjectLower = subject.toLowerCase();
+    const foundKeywords = URGENCY_KEYWORDS.filter(k => subjectLower.includes(k));
+    if (foundKeywords.length >= 2) {
+      scamChecks.push({ type:'danger', title:'Urgency Language in Subject', desc:`Subject contains multiple urgency/alarm keywords: "${foundKeywords.slice(0,4).join('", "')}". Scammers use urgency to pressure victims into acting without thinking.` });
+      scamReasons.push(`Subject uses urgency language: "${foundKeywords.slice(0,3).join('", "')}"`);
+    } else if (foundKeywords.length === 1) {
+      scamChecks.push({ type:'caution', title:'Urgency Keyword in Subject', desc:`Subject contains: "${foundKeywords[0]}". Be cautious of emails creating urgency.` });
+    } else {
+      scamChecks.push({ type:'good', title:'No Urgency Keywords Detected', desc:'Subject line does not contain common urgency or alarm phrases.' });
+    }
+  }
+
+  // 7. Return-Path mismatch
+  if (returnPath && from) {
+    const fromDomain   = from.match(/@([^\s>]+)/)?.[1]?.toLowerCase();
+    const returnDomain = returnPath.match(/@([^\s>]+)/)?.[1]?.toLowerCase();
+    if (fromDomain && returnDomain && fromDomain !== returnDomain) {
+      scamChecks.push({ type:'caution', title:'Return-Path Domain Mismatch', desc:`Return-Path (${returnDomain}) differs from From domain (${fromDomain}). May indicate a bulk sender or spoofed email.` });
+    }
+  }
+
+  // 8. Missing Message-ID
+  if (!messageId) {
+    scamChecks.push({ type:'danger', title:'Missing Message-ID', desc:'No Message-ID header found. Legitimate email servers always add one. This is a strong indicator of a spoofed or malformed email.' });
+    scamReasons.push('No Message-ID header — strongly suggests a spoofed email');
+  } else {
+    scamChecks.push({ type:'good', title:'Message-ID Present', desc:'Email has a valid Message-ID header.' });
+  }
+
+  // 9. Sender/From mismatch
+  if (sender && from) {
+    const fromEmail   = from.match(/<([^>]+)>/)?.[1]?.toLowerCase() || from.toLowerCase();
+    const senderEmail = sender.match(/<([^>]+)>/)?.[1]?.toLowerCase() || sender.toLowerCase();
+    if (fromEmail !== senderEmail) {
+      scamChecks.push({ type:'caution', title:'Sender Header Mismatch', desc:`The Sender header (${senderEmail}) differs from the From header (${fromEmail}). This can indicate the email was sent on behalf of someone else.` });
+    }
+  }
+
+  // 10. Excessive hops
+  if (hops.length > 6) {
+    scamChecks.push({ type:'caution', title:'Unusual Number of Hops', desc:`Email passed through ${hops.length} servers. Excessive hops can indicate spam relays or unusual routing.` });
+  }
+
+  // 11. X-Spam score if present
+  if (xSpamScore) {
+    scamChecks.push({ type:'caution', title:'Spam Score Header Detected', desc:`Server reported: ${xSpamScore}` });
+  }
+
+  // ---- GENERAL WARNINGS ----
+  const warnings = [];
+  if (xMailer) warnings.push({ type:'caution', title:'X-Mailer Detected', desc:`Sent via: ${xMailer}` });
+  if (hops.length === 0) warnings.push({ type:'caution', title:'No Received Headers', desc:'No routing information found. Headers may be incomplete or stripped.' });
+  if (spfResult === 'pass' && dkimResult === 'pass' && dmarcResult === 'pass') {
+    warnings.push({ type:'good', title:'Full Email Authentication Passed', desc:'SPF, DKIM and DMARC all passed. Strong indicator of a legitimate email.' });
+  }
+
+  // ---- SCAM VERDICT ----
+  const dangerCount  = scamChecks.filter(c => c.type === 'danger').length;
+  const cautionCount = scamChecks.filter(c => c.type === 'caution').length;
+  const isScam = dangerCount >= 2 || (dangerCount >= 1 && scamReasons.length >= 1);
+
+  document.getElementById('scamAlert').classList.toggle('show', isScam);
+  document.getElementById('safeBanner').classList.toggle('show', !isScam);
+
+  if (isScam) {
+    document.getElementById('scamReasons').innerHTML = scamReasons
+      .map(r => `<div class="scam-reason">${r}</div>`).join('');
+  }
+
+  // ---- SCORE ----
+  const score = scoreEmail(spfResult, dkimResult, dmarcResult, dangerCount, cautionCount);
+  const scoreEl   = document.getElementById('scoreNum');
+  const verdictEl = document.getElementById('scoreVerdict');
+  scoreEl.textContent = score;
+  scoreEl.className   = 'score-number ' + (score >= 70 ? 'score-good' : score >= 40 ? 'score-warn' : 'score-bad');
+  verdictEl.className = 'score-verdict '  + (score >= 70 ? 'good' : score >= 40 ? 'warn' : 'bad');
+  verdictEl.textContent = score >= 70 ? 'Trusted' : score >= 40 ? 'Suspicious' : 'Dangerous';
+
+  // ---- INFO TABLE ----
+  document.getElementById('infoTable').innerHTML = [
+    ['From', from], ['To', to], ['Subject', subject], ['Date', date],
+    ['Message-ID', messageId], ['Reply-To', replyTo], ['Return-Path', returnPath],
+    ['Sender', sender], ['Content-Type', contentType]
+  ].filter(r => r[1]).map(r => `<tr><td>${r[0]}</td><td>${escHtml(r[1])}</td></tr>`).join('');
+
+  // ---- SERVER TABLE ----
+  document.getElementById('serverTable').innerHTML = [
+    ['Originating IP', originatingIP], ['All IPs Found', ips.join(', ')],
+    ['X-Mailer', xMailer], ['Total Hops', hops.length + ' servers'],
+    ['First Relay', hops[0]?.from], ['Last Relay', hops[hops.length-1]?.by]
+  ].filter(r => r[1]).map(r => `<tr><td>${r[0]}</td><td>${escHtml(r[1])}</td></tr>`).join('');
+
+  // ---- HOPS ----
+  document.getElementById('hopsList').innerHTML = hops.length ? hops.map((hop, i) => {
+    const delay = i < hops.length-1 ? calcDelay(hop, hops[i+1]) : null;
+    const delayHtml = delay !== null ? `<span class="hop-delay ${delay > 30 ? 'slow' : 'ok'}">${delay > 60 ? Math.round(delay/60)+'m' : Math.round(delay)+'s'} delay</span>` : '';
+    return `<div class="hop">
+      <div class="hop-line"><div class="hop-dot"></div><div class="hop-connector"></div></div>
+      <div class="hop-card">
+        <div class="hop-number">Hop ${hop.index}</div>
+        <div class="hop-server">From: ${escHtml(hop.from)}${hop.ip ? ` [${hop.ip}]` : ''}</div>
+        <div class="hop-meta">By: ${escHtml(hop.by)}${hop.with ? ' via '+hop.with : ''}${delayHtml}</div>
+        ${hop.date ? `<div class="hop-meta">${escHtml(hop.date)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('') : '<div style="color:var(--muted);font-family:var(--font-mono);font-size:13px;padding:16px">No Received headers found</div>';
+
+  // ---- RENDER CHECKS & WARNINGS ----
+  const icons = { danger:'✕', caution:'⚠', good:'✓' };
+  document.getElementById('scamChecksList').innerHTML  = scamChecks.map(w  => warningHtml(w, icons)).join('');
+  document.getElementById('warningsList').innerHTML    = warnings.map(w    => warningHtml(w, icons)).join('');
+
+  // ---- RAW AUTH ----
+  document.getElementById('rawAuthTable').innerHTML = allAuthHeaders.length
+    ? allAuthHeaders.map(h => `<tr><td>Auth-Results</td><td>${escHtml(h)}</td></tr>`).join('')
+    : '<tr><td>Auth-Results</td><td style="color:var(--muted)">No authentication results found</td></tr>';
+
+  // Store
+  parsedData = { from, to, subject, date, messageId, replyTo, returnPath, xMailer, xOrigIp, spfResult, dkimResult, dmarcResult, score, hops, warnings: [...scamChecks, ...warnings], ips, isScam, scamReasons };
+
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('results').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function warningHtml(w, icons) {
+  return `<div class="warning-item ${w.type}">
+    <div class="warning-icon">${icons[w.type]}</div>
+    <div class="warning-text"><strong>${w.title}</strong><span>${w.desc}</span></div>
+  </div>`;
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function clearAll() {
+  document.getElementById('headerInput').value = '';
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('scamAlert').classList.remove('show');
+  document.getElementById('safeBanner').classList.remove('show');
+}
+
+function exportTXT() {
+  const d = parsedData;
+  let txt = `EMAIL HEADER ANALYSIS REPORT\n${'='.repeat(50)}\n`;
+  txt += `Date Analysed : ${new Date().toLocaleString()}\n`;
+  txt += `VERDICT       : ${d.isScam ? '*** LIKELY SCAM / PHISHING ***' : 'APPEARS LEGITIMATE'}\n`;
+  txt += `Trust Score   : ${d.score}/100\n\n`;
+  if (d.isScam && d.scamReasons.length) {
+    txt += `SCAM INDICATORS\n${'-'.repeat(30)}\n`;
+    d.scamReasons.forEach(r => { txt += `  - ${r}\n`; });
+    txt += '\n';
+  }
+  txt += `AUTHENTICATION\n${'-'.repeat(30)}\nSPF  : ${d.spfResult}\nDKIM : ${d.dkimResult}\nDMARC: ${d.dmarcResult}\n\n`;
+  txt += `EMAIL INFO\n${'-'.repeat(30)}\n`;
+  txt += `From       : ${d.from||'—'}\nTo         : ${d.to||'—'}\nSubject    : ${d.subject||'—'}\nDate       : ${d.date||'—'}\nMessage-ID : ${d.messageId||'—'}\n\n`;
+  txt += `ROUTING HOPS\n${'-'.repeat(30)}\n`;
+  d.hops.forEach(h => { txt += `Hop ${h.index}: ${h.from} → ${h.by}\n`; });
+  txt += `\nCHECKS\n${'-'.repeat(30)}\n`;
+  d.warnings.forEach(w => { txt += `[${w.type.toUpperCase()}] ${w.title}: ${w.desc}\n`; });
+  download(`Email_Analysis_${new Date().toISOString().slice(0,10)}.txt`, txt, 'text/plain');
+}
+
+function exportCSV() {
+  const d = parsedData;
+  let csv = 'Category,Field,Value\n';
+  csv += `Verdict,Scam Detection,"${d.isScam ? 'LIKELY SCAM' : 'Appears Legitimate'}"\n`;
+  csv += `Score,Trust Score,${d.score}/100\n`;
+  csv += `Authentication,SPF,${d.spfResult}\nAuthentication,DKIM,${d.dkimResult}\nAuthentication,DMARC,${d.dmarcResult}\n`;
+  csv += `Info,From,"${(d.from||'').replace(/"/g,'""')}"\n`;
+  csv += `Info,To,"${(d.to||'').replace(/"/g,'""')}"\n`;
+  csv += `Info,Subject,"${(d.subject||'').replace(/"/g,'""')}"\n`;
+  csv += `Info,Date,"${(d.date||'').replace(/"/g,'""')}"\n`;
+  d.hops.forEach(h => { csv += `Hop,Hop ${h.index},"${h.from} → ${h.by}"\n`; });
+  d.warnings.forEach(w => { csv += `${w.type},${w.title},"${w.desc.replace(/"/g,'""')}"\n`; });
+  download(`Email_Analysis_${new Date().toISOString().slice(0,10)}.csv`, csv, 'text/csv');
+}
+
+function download(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+
+document.getElementById('headerInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.ctrlKey) analyseHeaders();
+});
+</script>
+</body>
+</html>
