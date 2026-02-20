@@ -402,16 +402,32 @@ function getHeader(headers, name) {
 }
 
 function getAllHeaders(headers, name) {
+  // Parse line by line, joining folded continuation lines
   var lines = headers.split('
 ');
-  var result = [];
-  var current = null;
+  var unfolded = [];
+  var current = '';
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].replace(/
 $/, '');
-    if (line.length > 0 && (line[0] === ' ' || line[0] === '	')) {
-      if (current !== null) current += ' ' + line.trim();
+    if (line.length > 0 && (line.charAt(0) === ' ' || line.charAt(0) === '	')) {
+      current += ' ' + line.trim();
     } else {
+      if (current !== '') unfolded.push(current);
+      current = line;
+    }
+  }
+  if (current !== '') unfolded.push(current);
+
+  // Find matching headers (case-insensitive)
+  var results = [];
+  var namePattern = new RegExp('^' + name + ':\s*(.*)', 'i');
+  for (var j = 0; j < unfolded.length; j++) {
+    var m = namePattern.exec(unfolded[j]);
+    if (m) results.push(m[1].trim());
+  }
+  return results;
+} else {
       if (current !== null) result.push(current);
       var nameMatch = new RegExp('^' + name + ':\s*(.*)', 'i').exec(line);
       current = nameMatch ? nameMatch[1].trim() : null;
