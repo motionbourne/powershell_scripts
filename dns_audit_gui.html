@@ -33,7 +33,6 @@
     overflow-x: hidden;
   }
 
-  /* Animated background grid */
   body::before {
     content: '';
     position: fixed;
@@ -67,7 +66,6 @@
     z-index: 1;
   }
 
-  /* Header */
   header {
     display: flex;
     align-items: center;
@@ -88,11 +86,7 @@
     flex-shrink: 0;
   }
 
-  header h1 {
-    font-size: 28px;
-    font-weight: 800;
-    letter-spacing: -0.5px;
-  }
+  header h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
 
   header span {
     display: block;
@@ -103,7 +97,6 @@
     margin-top: 2px;
   }
 
-  /* Search bar */
   .search-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -122,10 +115,7 @@
     margin-bottom: 12px;
   }
 
-  .search-row {
-    display: flex;
-    gap: 12px;
-  }
+  .search-row { display: flex; gap: 12px; }
 
   .search-input {
     flex: 1;
@@ -165,7 +155,6 @@
   .btn-audit:active { transform: translateY(0); }
   .btn-audit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-  /* Progress */
   .progress-bar-wrap {
     height: 3px;
     background: var(--border);
@@ -191,7 +180,6 @@
     display: none;
   }
 
-  /* Stats row */
   .stats-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -235,7 +223,6 @@
     font-family: var(--font-mono);
   }
 
-  /* Results */
   .results-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -262,11 +249,7 @@
     letter-spacing: 2px;
   }
 
-  .filter-row {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
+  .filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
   .filter-btn {
     background: var(--bg);
@@ -285,10 +268,7 @@
   .filter-btn.active-green { background: var(--green); border-color: var(--green); color: #000; font-weight: 700; }
   .filter-btn.active-red { background: var(--red); border-color: var(--red); color: #fff; font-weight: 700; }
 
-  .results-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
+  .results-table { width: 100%; border-collapse: collapse; }
 
   .results-table th {
     text-align: left;
@@ -310,36 +290,12 @@
   }
 
   .results-table tr:last-child td { border-bottom: none; }
-
   .results-table tr:hover td { background: rgba(255,255,255,0.02); }
 
-  .section-name {
-    font-weight: 600;
-    color: var(--text);
-    font-size: 13px;
-  }
-
-  .record-type {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--muted);
-    margin-top: 3px;
-  }
-
-  .hostname {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--muted);
-    word-break: break-all;
-  }
-
-  .value {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--text);
-    word-break: break-all;
-    max-width: 340px;
-  }
+  .section-name { font-weight: 600; color: var(--text); font-size: 13px; }
+  .record-type { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .hostname { font-family: var(--font-mono); font-size: 12px; color: var(--muted); word-break: break-all; }
+  .value { font-family: var(--font-mono); font-size: 12px; color: var(--text); word-break: break-all; max-width: 340px; }
 
   .badge {
     display: inline-block;
@@ -358,7 +314,6 @@
   .badge-info { background: rgba(59,130,246,0.15); color: var(--blue); border: 1px solid rgba(59,130,246,0.3); }
   .badge-checking { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
 
-  /* Export buttons */
   .export-row {
     display: flex;
     gap: 10px;
@@ -384,33 +339,11 @@
 
   .btn-export:hover { border-color: var(--accent); color: var(--accent); }
 
-  /* Empty state */
-  .empty-state {
-    text-align: center;
-    padding: 80px 24px;
-    color: var(--muted);
-  }
+  .empty-state { text-align: center; padding: 80px 24px; color: var(--muted); }
+  .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
+  .empty-state h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: var(--text); opacity: 0.5; }
+  .empty-state p { font-size: 13px; font-family: var(--font-mono); }
 
-  .empty-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-    opacity: 0.4;
-  }
-
-  .empty-state h3 {
-    font-size: 18px;
-    font-weight: 600;
-    margin-bottom: 8px;
-    color: var(--text);
-    opacity: 0.5;
-  }
-
-  .empty-state p {
-    font-size: 13px;
-    font-family: var(--font-mono);
-  }
-
-  /* Provider banner */
   .provider-banner {
     background: linear-gradient(135deg, rgba(0,212,255,0.08), rgba(124,58,237,0.08));
     border: 1px solid rgba(0,212,255,0.2);
@@ -425,7 +358,6 @@
 
   .provider-banner strong { color: var(--accent); }
 
-  /* Animations */
   @keyframes fadeDown {
     from { opacity: 0; transform: translateY(-20px); }
     to { opacity: 1; transform: translateY(0); }
@@ -436,9 +368,7 @@
     to { opacity: 1; transform: translateY(0); }
   }
 
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   .spinner {
     display: inline-block;
@@ -450,10 +380,7 @@
     animation: spin 0.6s linear infinite;
   }
 
-  /* Row animation */
-  .result-row {
-    animation: fadeUp 0.3s ease both;
-  }
+  .result-row { animation: fadeUp 0.3s ease both; }
 
   @media (max-width: 768px) {
     .stats-row { grid-template-columns: repeat(2, 1fr); }
@@ -478,7 +405,6 @@
     </div>
   </header>
 
-  <!-- Search -->
   <div class="search-card">
     <div class="search-label">Target Domain</div>
     <div class="search-row">
@@ -494,7 +420,6 @@
     <div class="provider-banner" id="providerBanner"></div>
   </div>
 
-  <!-- Stats -->
   <div class="stats-row">
     <div class="stat-card total">
       <div class="stat-number" id="statTotal">—</div>
@@ -514,7 +439,6 @@
     </div>
   </div>
 
-  <!-- Results -->
   <div class="results-card">
     <div class="results-header">
       <div class="results-title">Results</div>
@@ -548,6 +472,7 @@ let currentFilter = 'all';
 let auditDomain = '';
 
 const checks = [
+  // Core records
   { section: 'Main Domain - A Record',                 type: 'A',     host: d => d },
   { section: 'Main Domain - AAAA (IPv6)',               type: 'AAAA',  host: d => d },
   { section: 'Main Domain - MX (Mail)',                 type: 'MX',    host: d => d },
@@ -562,19 +487,45 @@ const checks = [
   { section: 'SMTP Record',                             type: 'A',     host: d => `smtp.${d}` },
   { section: 'IMAP Record',                             type: 'A',     host: d => `imap.${d}` },
   { section: 'POP Record',                              type: 'A',     host: d => `pop.${d}` },
+  // Email authentication
   { section: 'DMARC',                                   type: 'TXT',   host: d => `_dmarc.${d}` },
   { section: 'DKIM - General',                          type: 'TXT',   host: d => `_domainkey.${d}` },
+  // Mailchimp
   { section: 'DKIM - Mailchimp (k1)',                   type: 'CNAME', host: d => `k1._domainkey.${d}` },
   { section: 'DKIM - Mailchimp (k2)',                   type: 'CNAME', host: d => `k2._domainkey.${d}` },
   { section: 'DKIM - Mailchimp (k3)',                   type: 'CNAME', host: d => `k3._domainkey.${d}` },
   { section: 'DKIM - Mailchimp (k4)',                   type: 'CNAME', host: d => `k4._domainkey.${d}` },
   { section: 'DKIM - Mailchimp (k5)',                   type: 'CNAME', host: d => `k5._domainkey.${d}` },
   { section: 'DKIM - Mailchimp Mandrill',               type: 'CNAME', host: d => `mandrill._domainkey.${d}` },
+  // SendGrid
+  { section: 'DKIM - SendGrid (s1)',                    type: 'CNAME', host: d => `s1._domainkey.${d}` },
+  { section: 'DKIM - SendGrid (s2)',                    type: 'CNAME', host: d => `s2._domainkey.${d}` },
+  { section: 'DKIM - SendGrid (em)',                    type: 'CNAME', host: d => `em._domainkey.${d}` },
+  { section: 'DKIM - SendGrid (legacy)',                type: 'CNAME', host: d => `scph0316._domainkey.${d}` },
+  // HubSpot
+  { section: 'DKIM - HubSpot (hs1)',                    type: 'CNAME', host: d => `hs1._domainkey.${d}` },
+  { section: 'DKIM - HubSpot (hs2)',                    type: 'CNAME', host: d => `hs2._domainkey.${d}` },
+  // Zoho
+  { section: 'DKIM - Zoho',                             type: 'TXT',   host: d => `zoho._domainkey.${d}` },
+  { section: 'DKIM - Zoho Mail',                        type: 'TXT',   host: d => `zmail._domainkey.${d}` },
+  // Brevo / Sendinblue
+  { section: 'DKIM - Brevo / Sendinblue',               type: 'CNAME', host: d => `mail._domainkey.${d}` },
+  // Mailgun
+  { section: 'DKIM - Mailgun (pic)',                    type: 'TXT',   host: d => `pic._domainkey.${d}` },
+  { section: 'DKIM - Mailgun (krs)',                    type: 'TXT',   host: d => `krs._domainkey.${d}` },
+  // ActiveCampaign
+  { section: 'DKIM - ActiveCampaign',                   type: 'CNAME', host: d => `ac._domainkey.${d}` },
+  // Klaviyo
+  { section: 'DKIM - Klaviyo',                          type: 'CNAME', host: d => `klaviyo._domainkey.${d}` },
+  // Microsoft
   { section: 'DKIM - Microsoft Selector1',              type: 'CNAME', host: d => `selector1._domainkey.${d}` },
   { section: 'DKIM - Microsoft Selector2',              type: 'CNAME', host: d => `selector2._domainkey.${d}` },
+  // Google Workspace
   { section: 'DKIM - Google Workspace',                 type: 'TXT',   host: d => `google._domainkey.${d}` },
+  // Mail standards
   { section: 'MTA-STS',                                 type: 'TXT',   host: d => `_mta-sts.${d}` },
   { section: 'TLS Reporting',                           type: 'TXT',   host: d => `_smtp._tls.${d}` },
+  // Microsoft 365 / Teams
   { section: 'Autodiscover (Microsoft 365)',            type: 'CNAME', host: d => `autodiscover.${d}` },
   { section: 'Microsoft Online ID',                     type: 'CNAME', host: d => `msoid.${d}` },
   { section: 'Enterprise Registration (M365)',          type: 'CNAME', host: d => `enterpriseregistration.${d}` },
@@ -628,9 +579,7 @@ async function getProvider(domain) {
 
 function setFilter(f) {
   currentFilter = f;
-  document.querySelectorAll('.filter-btn').forEach(b => {
-    b.className = 'filter-btn';
-  });
+  document.querySelectorAll('.filter-btn').forEach(b => { b.className = 'filter-btn'; });
   if (f === 'all') document.getElementById('filterAll').className = 'filter-btn active';
   if (f === 'found') document.getElementById('filterFound').className = 'filter-btn active-green';
   if (f === 'notfound') document.getElementById('filterNotFound').className = 'filter-btn active-red';
@@ -725,7 +674,6 @@ async function runAudit() {
       <p>Checking DNS records via Google DNS</p>
     </div>`;
 
-  // Provider lookup
   document.getElementById('progressLabel').textContent = 'Detecting DNS provider...';
   const providerData = await getProvider(domain);
   if (providerData) {
@@ -735,7 +683,6 @@ async function runAudit() {
     allResults.push({ section: 'DNS Provider', type: 'NS', hostname: providerData.root, value: providerData.nameservers, status: 'INFO' });
   }
 
-  // Run all checks
   for (let i = 0; i < checks.length; i++) {
     const check = checks[i];
     const hostname = check.host(domain);
