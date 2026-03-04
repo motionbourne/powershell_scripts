@@ -6,7 +6,8 @@
 .DESCRIPTION
     - Uses TPM for OS drive protection (TPM must be present and ready).
     - Creates a Recovery Password protector.
-    - Writes the 48-digit Recovery Key to a timestamped file in C:\tools\.
+    - Writes the 48-digit Recovery Key to a timestamped file in C:\tools\,
+      along with hardware info, protector ID and encryption method.
     - If BitLocker is already enabled, exports the existing Recovery Key to file.
     - Designed for Windows 10/11 with Windows PowerShell 5.1.
 
@@ -47,6 +48,31 @@ function Ensure-Directory {
     }
 }
 
+function Get-HardwareInfo {
+    $cs  = Get-CimInstance -ClassName Win32_ComputerSystem
+    $bio = Get-CimInstance -ClassName Win32_BIOS
+    $cpu = Get-CimInstance -ClassName Win32_Processor | Select-Object -First 1
+    $os  = Get-CimInstance -ClassName Win32_OperatingSystem
+
+    $ramGB = [math]::Round($cs.TotalPhysicalMemory / 1GB, 0)
+
+    $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+           Where-Object { $_.InterfaceAlias -notmatch 'Loopback' } |
+           Select-Object -First 1).IPAddress
+
+    [PSCustomObject]@{
+        MakeModel    = "$($cs.Manufacturer) $($cs.Model)".Trim()
+        Serial       = $bio.SerialNumber
+        Domain       = $cs.Domain
+        IPAddress    = if ($ip) { $ip } else { 'Unknown' }
+        CPU          = $cpu.Name.Trim()
+        RAMGB        = $ramGB
+        BIOSVersion  = $bio.SMBIOSBIOSVersion
+        OSVersion    = $os.Caption
+        LoggedOnUser = if ($cs.UserName) { $cs.UserName } else { 'None detected' }
+    }
+}
+
 function Write-KeyToFile {
     param(
         [string]$RecoveryPassword,
@@ -57,16 +83,45 @@ function Write-KeyToFile {
     $file      = Join-Path $KeyDir ('{0}-{1}-BitLockerKey-{2}.txt' -f $env:COMPUTERNAME, $driveTag, $timestamp)
 
     $utcNow = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')
+    $hw     = Get-HardwareInfo
+
+    # Get protector ID and encryption method from volume
+    $vol       = Get-BitLockerVolume -MountPoint $Drive
+    $rkObj     = $vol.KeyProtector | Where-Object { $_.KeyProtectorType -eq 'RecoveryPassword' } | Select-Object -First 1
+    $protId    = if ($rkObj) { $rkObj.KeyProtectorId } else { 'Unknown' }
+    $encMethod = if ($vol.EncryptionMethod) { $vol.EncryptionMethod } else { 'XTS-AES 256' }
 
     @"
-Computer:     $($env:COMPUTERNAME)
-Drive:        $Drive
-Date (UTC):   $utcNow
---------------
-RECOVERY KEY: $RecoveryPassword
+========================================
+ BITLOCKER RECOVERY KEY
+========================================
+
+COMPUTER
+  Name:           $($env:COMPUTERNAME)
+  Make/Model:     $($hw.MakeModel)
+  Serial:         $($hw.Serial)
+  Domain:         $($hw.Domain)
+  IP Address:     $($hw.IPAddress)
+  Logged On User: $($hw.LoggedOnUser)
+  OS:             $($hw.OSVersion)
+
+HARDWARE
+  CPU:            $($hw.CPU)
+  RAM:            $($hw.RAMGB) GB
+  BIOS Version:   $($hw.BIOSVersion)
+
+BITLOCKER
+  Drive:          $Drive
+  Encryption:     $encMethod
+  Protector ID:   $protId
+  Date (UTC):     $utcNow
+
+----------------------------------------
+  RECOVERY KEY:   $RecoveryPassword
+----------------------------------------
 "@ | Out-File -FilePath $file -Encoding UTF8 -Force
 
-    Write-Host ("`u2714 Recovery Key saved to: {0}" -f $file) -ForegroundColor Green
+    Write-Host ("Recovery Key saved to: {0}" -f $file) -ForegroundColor Green
 }
 
 function Get-RecoveryPassword {
