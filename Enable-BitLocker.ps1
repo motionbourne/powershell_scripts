@@ -124,15 +124,12 @@ try {
         throw "TPM is not present or not ready. Ensure TPM is enabled in firmware, then re-run this script."
     }
 
-    # 1) Add a Recovery Password protector so we can capture the key before encryption starts
-    $rp              = Add-BitLockerKeyProtector -MountPoint $MountPoint -RecoveryPasswordProtector
-    $recoveryPassword = $rp.RecoveryPassword
+    # 1) Add a Recovery Password protector, then always re-query the volume for the key
+    #    (Add-BitLockerKeyProtector does not reliably return RecoveryPassword on all Windows builds)
+    Add-BitLockerKeyProtector -MountPoint $MountPoint -RecoveryPasswordProtector | Out-Null
+    Start-Sleep -Seconds 2
 
-    # Allow a moment for the protector to be committed, then re-query if needed
-    if (-not $recoveryPassword) {
-        Start-Sleep -Seconds 2
-        $recoveryPassword = Get-RecoveryPassword -Drive $MountPoint
-    }
+    $recoveryPassword = Get-RecoveryPassword -Drive $MountPoint
     if (-not $recoveryPassword) {
         throw "Could not retrieve the Recovery Password after creating it. Aborting to avoid data loss."
     }
