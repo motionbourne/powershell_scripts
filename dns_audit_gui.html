@@ -315,6 +315,8 @@
   .badge-found { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
   .badge-notfound { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
   .badge-error { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
+  .badge-finding { background: rgba(239,68,68,0.2); color: #fca5a5; border: 1px solid rgba(239,68,68,0.45); }
+  .badge-warn { background: rgba(245,158,11,0.2); color: #fcd34d; border: 1px solid rgba(245,158,11,0.45); }
   .badge-info { background: rgba(59,130,246,0.15); color: var(--blue); border: 1px solid rgba(59,130,246,0.3); }
   .badge-checking { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
 
@@ -385,6 +387,14 @@
     display: none;
   }
 
+  .limitation-note {
+    margin-top: 16px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
   @keyframes fadeDown {
     from { opacity: 0; transform: translateY(-20px); }
     to { opacity: 1; transform: translateY(0); }
@@ -429,6 +439,7 @@
     <div>
       <h1>DNS Audit Tool</h1>
       <span>Comprehensive domain record analysis</span>
+      <p class="limitation-note">Checks a <strong>known list</strong> of record names only — &ldquo;all clear&rdquo; means none of these names had issues, not that every possible DNS name was tested.</p>
     </div>
   </header>
 
@@ -509,6 +520,19 @@ const QUERY_CONCURRENCY = 6;
 const MASS_FAILURE_RATE = 0.3;
 const MASS_FAILURE_HEAD = 5;
 
+// Takeover-prone CNAME targets (small documented list; heuristic advisory only).
+const TAKEOVER_CNAME_TARGETS = [
+  { pattern: /\.s3\.amazonaws\.com$/i, label: 'AWS S3' },
+  { pattern: /\.s3-website[.-][\w-]+\.amazonaws\.com$/i, label: 'AWS S3 website' },
+  { pattern: /\.azurewebsites\.net$/i, label: 'Azure App Service' },
+  { pattern: /\.cloudapp\.azure\.com$/i, label: 'Azure Cloud App' },
+  { pattern: /\.github\.io$/i, label: 'GitHub Pages' },
+  { pattern: /\.cloudfront\.net$/i, label: 'CloudFront' },
+  { pattern: /\.herokuapp\.com$/i, label: 'Heroku' },
+  { pattern: /\.pantheonsite\.io$/i, label: 'Pantheon' },
+  { pattern: /\.zendesk\.com$/i, label: 'Zendesk' }
+];
+
 let allResults = [];
 let currentFilter = 'all';
 let auditDomain = '';
@@ -562,6 +586,8 @@ const checks = [
   { section: 'MTA-STS',                                 type: 'TXT',   host: d => `_mta-sts.${d}` },
   { section: 'TLS Reporting',                           type: 'TXT',   host: d => `_smtp._tls.${d}` },
   { section: 'Autodiscover (Microsoft 365)',            type: 'CNAME', host: d => `autodiscover.${d}` },
+  { section: 'Autodiscover SRV (M365)',               type: 'SRV',   host: d => `_autodiscover._tcp.${d}` },
+  { section: 'BIMI (Brand Indicator)',                type: 'TXT',   host: d => `default._bimi.${d}` },
   { section: 'Microsoft Online ID',                     type: 'CNAME', host: d => `msoid.${d}` },
   { section: 'Enterprise Registration (M365)',          type: 'CNAME', host: d => `enterpriseregistration.${d}` },
   { section: 'Enterprise Enrollment (MDM)',             type: 'CNAME', host: d => `enterpriseenrollment.${d}` },
@@ -655,21 +681,22 @@ function normalizeDnsAnswer(answers, type) {
 
 function parseDnsPayload(data, type, resolverId) {
   const rcode = typeof data.Status === 'number' ? data.Status : null;
+  const ad = data.AD === true;
+  const base = { rcode, resolver: resolverId, ad };
   if (rcode === 0) {
     const value = normalizeDnsAnswer(data.Answer, type);
     if (value) {
-      return { status: 'found', value, rcode, resolver: resolverId };
+      return { status: 'found', value, ...base };
     }
-    return { status: 'absent', value: null, rcode, resolver: resolverId };
+    return { status: 'absent', value: null, ...base };
   }
   if (rcode === 3) {
-    return { status: 'absent', value: null, rcode, resolver: resolverId };
+    return { status: 'absent', value: null, ...base };
   }
   return {
     status: 'error',
     value: null,
-    rcode,
-    resolver: resolverId,
+    ...base,
     message: rcode == null ? 'Invalid DNS response' : `DNS rcode ${rcode}`
   };
 }
@@ -779,6 +806,357 @@ function vcardField(vcard, names) {
     if (names.includes(row[0]) && row[3]) return String(row[3]);
   }
   return null;
+}
+
+async function fetchDomainRdap(domain) {
+  try {
+    const rdap = await fetchWithTimeout(`https://rdap.org/domain/${encodeURIComponent(domain)}`);
+    if (!rdap.ok) return null;
+    return await rdap.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+function parseDomainExpiry(rdapData) {
+  if (!rdapData || !Array.isArray(rdapData.events)) return null;
+  const exp = rdapData.events.find(e => e && e.eventAction === 'expiration' && e.eventDate);
+  if (!exp) return null;
+  const date = new Date(exp.eventDate);
+  if (Number.isNaN(date.getTime())) return null;
+  const days = Math.ceil((date - new Date()) / 86400000);
+  return { date, days, iso: exp.eventDate.slice(0, 10) };
+}
+
+function analyzeDomainExpiry(domain, rdapData) {
+  const exp = parseDomainExpiry(rdapData);
+  if (!exp) {
+    return {
+      section: 'Domain Expiry',
+      type: 'RDAP',
+      hostname: domain,
+      value: 'Expiration date not available from RDAP',
+      status: 'INFO'
+    };
+  }
+  const msg = `Domain expires ${exp.iso} (${exp.days} days)`;
+  if (exp.days < 0) {
+    return { section: 'Domain Expiry', type: 'RDAP', hostname: domain, value: `${msg} — EXPIRED`, status: 'FINDING' };
+  }
+  if (exp.days <= 30) {
+    return { section: 'Domain Expiry', type: 'RDAP', hostname: domain, value: `${msg} — renew soon`, status: 'WARN' };
+  }
+  return { section: 'Domain Expiry', type: 'RDAP', hostname: domain, value: msg, status: 'INFO' };
+}
+
+function analyzeDnssec(domain, sawAd, hadSuccessfulLookup) {
+  if (!hadSuccessfulLookup) {
+    return {
+      section: 'DNSSEC',
+      type: 'AD',
+      hostname: domain,
+      value: 'Could not determine (lookups failed)',
+      status: 'LOOKUP FAILED'
+    };
+  }
+  if (sawAd) {
+    return {
+      section: 'DNSSEC',
+      type: 'AD',
+      hostname: domain,
+      value: 'DNSSEC validated (DoH AD flag set)',
+      status: 'INFO'
+    };
+  }
+  return {
+    section: 'DNSSEC',
+    type: 'AD',
+    hostname: domain,
+    value: 'Not validated / likely unsigned (no AD flag)',
+    status: 'INFO'
+  };
+}
+
+function extractSpfRecords(txtValue) {
+  if (!txtValue || txtValue === 'Not Found') return [];
+  return txtValue.split('\n').map(l => l.trim()).filter(l => /^v=spf1\b/i.test(l));
+}
+
+function analyzeSpf(apexTxtRow) {
+  const hostname = apexTxtRow ? apexTxtRow.hostname : '';
+  if (!apexTxtRow || apexTxtRow.status === 'LOOKUP FAILED') {
+    return {
+      section: 'SPF Analysis',
+      type: 'TXT',
+      hostname,
+      value: 'SPF check skipped (apex TXT lookup failed)',
+      status: 'LOOKUP FAILED'
+    };
+  }
+  const spfRecords = extractSpfRecords(apexTxtRow.value);
+  if (spfRecords.length === 0) {
+    return {
+      section: 'SPF Analysis',
+      type: 'TXT',
+      hostname,
+      value: 'No SPF record (v=spf1) on apex TXT',
+      status: 'FINDING'
+    };
+  }
+  if (spfRecords.length > 1) {
+    return {
+      section: 'SPF Analysis',
+      type: 'TXT',
+      hostname,
+      value: `Multiple SPF records (${spfRecords.length}) — invalid`,
+      status: 'FINDING'
+    };
+  }
+  const spf = spfRecords[0];
+  const notes = [];
+  let status = 'FOUND';   // PASS baseline (green); only worsen for genuine problems
+  const allMatch = spf.match(/([+~?-])all\b/i);
+  const qualifier = allMatch ? allMatch[1] : null;
+  if (qualifier === '+') {
+    notes.push('all-qualifier allows anyone to send (spoofable)');
+    status = 'FINDING';
+  } else if (qualifier === '?') {
+    notes.push('neutral all-qualifier — no real protection');
+    status = 'WARN';
+  } else if (qualifier === '~') {
+    notes.push('soft-fail all-qualifier — normal, recommended');
+  } else if (qualifier === '-') {
+    notes.push('strict hard-fail all-qualifier');
+  } else {
+    notes.push('no "all" mechanism — effectively fail-open');
+    status = 'WARN';
+  }
+  const lookupParts = (spf.match(/\b(include|a|mx|ptr|exists|redirect):/gi) || []).length;
+  if (lookupParts >= 8) {
+    notes.push(`high DNS lookup count (${lookupParts} mechanisms — 10-lookup limit risk)`);
+    if (status === 'FOUND') status = 'WARN';
+  }
+  return {
+    section: 'SPF Analysis',
+    type: 'TXT',
+    hostname,
+    value: `${spf} — ${notes.join('; ')}`,
+    status
+  };
+}
+
+function analyzeDmarc(dmarcRow) {
+  const hostname = dmarcRow ? dmarcRow.hostname : '';
+  if (!dmarcRow || dmarcRow.status === 'LOOKUP FAILED') {
+    return {
+      section: 'DMARC Policy',
+      type: 'TXT',
+      hostname,
+      value: 'DMARC check skipped (lookup failed)',
+      status: 'LOOKUP FAILED'
+    };
+  }
+  if (dmarcRow.status === 'NOT FOUND' || !dmarcRow.value || dmarcRow.value === 'Not Found') {
+    return {
+      section: 'DMARC Policy',
+      type: 'TXT',
+      hostname,
+      value: 'No DMARC record',
+      status: 'FINDING'
+    };
+  }
+  const txt = dmarcRow.value.replace(/\s+/g, '');
+  const policyMatch = txt.match(/(?:^|;)p=([^;]+)/i);
+  const policy = policyMatch ? policyMatch[1].toLowerCase() : 'none';
+  const hasRua = /(?:^|;)rua=/i.test(txt);
+  const issues = [];
+  if (policy === 'none') issues.push('p=none (monitoring only — weak)');
+  if (!hasRua) issues.push('missing rua= aggregate reporting');
+  if (issues.length) {
+    return {
+      section: 'DMARC Policy',
+      type: 'TXT',
+      hostname,
+      value: `${dmarcRow.value} — ${issues.join('; ')}`,
+      status: policy === 'none' ? 'FINDING' : 'WARN'
+    };
+  }
+  return {
+    section: 'DMARC Policy',
+    type: 'TXT',
+    hostname,
+    value: `${dmarcRow.value} — enforced (${policy})`,
+    status: 'FOUND'
+  };
+}
+
+function parseMxHosts(mxValue) {
+  if (!mxValue) return [];
+  return mxValue.split('\n').map(line => {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 2) return null;
+    return parts[parts.length - 1].replace(/\.$/, '').toLowerCase();
+  }).filter(Boolean);
+}
+
+function ipv4ToPtrName(ip) {
+  return ip.split('.').reverse().join('.') + '.in-addr.arpa';
+}
+
+function expandIpv6(ip) {
+  const halves = ip.split('::');
+  let left = halves[0] ? halves[0].split(':') : [];
+  let right = halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - left.length - right.length;
+  const full = [...left, ...Array(missing).fill('0'), ...right];
+  return full.map(h => h.padStart(4, '0')).join('');
+}
+
+function ipv6ToPtrName(ip) {
+  const expanded = expandIpv6(ip.replace(/^\[|\]$/g, ''));
+  return expanded.split('').reverse().join('.') + '.ip6.arpa';
+}
+
+async function resolveHostIps(hostname) {
+  const ips = [];
+  const a = await queryDNS(hostname, 'A');
+  if (a.status === 'found' && a.value) {
+    a.value.split('\n').forEach(ip => ips.push({ ip: ip.trim(), type: 'A' }));
+  }
+  const aaaa = await queryDNS(hostname, 'AAAA');
+  if (aaaa.status === 'found' && aaaa.value) {
+    aaaa.value.split('\n').forEach(ip => ips.push({ ip: ip.trim(), type: 'AAAA' }));
+  }
+  return ips;
+}
+
+async function analyzeMxPtr(domain) {
+  const rows = [];
+  const mxResult = await queryDNS(domain, 'MX');
+  if (mxResult.status !== 'found' || !mxResult.value) {
+    rows.push({
+      section: 'MX PTR / Reverse DNS',
+      type: 'PTR',
+      hostname: domain,
+      value: mxResult.status === 'error' ? 'MX lookup failed' : 'No MX records — PTR check skipped',
+      status: mxResult.status === 'error' ? 'LOOKUP FAILED' : 'INFO'
+    });
+    return rows;
+  }
+  const mxHosts = [...new Set(parseMxHosts(mxResult.value))];
+  for (const mxHost of mxHosts) {
+    const ips = await resolveHostIps(mxHost);
+    if (!ips.length) {
+      rows.push({
+        section: 'MX PTR / Reverse DNS',
+        type: 'PTR',
+        hostname: mxHost,
+        value: 'No A/AAAA for MX host',
+        status: 'FINDING'
+      });
+      continue;
+    }
+    for (const { ip } of ips) {
+      const ptrName = ip.includes(':') ? ipv6ToPtrName(ip) : ipv4ToPtrName(ip);
+      const ptrResult = await queryDNS(ptrName, 'PTR');
+      if (ptrResult.status !== 'found' || !ptrResult.value) {
+        rows.push({
+          section: 'MX PTR / Reverse DNS',
+          type: 'PTR',
+          hostname: mxHost,
+          value: `${ip} — no PTR record`,
+          status: 'FINDING'
+        });
+        continue;
+      }
+      const ptrHost = ptrResult.value.split('\n')[0].replace(/\.$/, '').toLowerCase();
+      // Forward-confirmed reverse DNS (FCrDNS): does the PTR hostname resolve back to this IP?
+      // (Mail-server PTRs legitimately live on infra domains, e.g. 1e100.net — do NOT compare to
+      //  the MX hostname; that false-positives on Google/M365/etc.)
+      const fwd = await resolveHostIps(ptrHost);
+      const confirmed = fwd.some(f => f.ip === ip);
+      if (confirmed) {
+        rows.push({
+          section: 'MX PTR / Reverse DNS',
+          type: 'PTR',
+          hostname: mxHost,
+          value: `${ip} PTR=${ptrHost} (forward-confirmed)`,
+          status: 'FOUND'
+        });
+      } else {
+        rows.push({
+          section: 'MX PTR / Reverse DNS',
+          type: 'PTR',
+          hostname: mxHost,
+          value: `${ip} PTR=${ptrHost} — not forward-confirmed (PTR host does not resolve back to ${ip})`,
+          status: 'WARN'
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+function matchTakeoverTarget(target) {
+  const host = target.replace(/\.$/, '').toLowerCase();
+  for (const t of TAKEOVER_CNAME_TARGETS) {
+    if (t.pattern.test(host)) return t.label;
+  }
+  return null;
+}
+
+async function analyzeTakeoverHints(checkRows) {
+  const rows = [];
+  const cnameRows = checkRows.filter(r => r.type === 'CNAME' && r.status === 'FOUND' && r.value);
+  for (const row of cnameRows) {
+    const targets = row.value.split('\n').map(v => v.replace(/\.$/, '').trim()).filter(Boolean);
+    for (const target of targets) {
+      const label = matchTakeoverTarget(target);
+      if (!label) continue;
+      const targetA = await queryDNS(target, 'A');
+      const targetAaaa = await queryDNS(target, 'AAAA');
+      const resolves = targetA.status === 'found' || targetAaaa.status === 'found';
+      if (!resolves) {
+        rows.push({
+          section: 'Subdomain Takeover (advisory)',
+          type: 'CNAME',
+          hostname: row.hostname,
+          value: `CNAME → ${target} (${label}) — target does not resolve; possible dangling CNAME`,
+          status: 'WARN'
+        });
+      }
+    }
+  }
+  if (!rows.length) {
+    rows.push({
+      section: 'Subdomain Takeover (advisory)',
+      type: 'CNAME',
+      hostname: '(checked CNAMEs)',
+      value: 'No dangling CNAME hints for known takeover-prone targets',
+      status: 'INFO'
+    });
+  }
+  return rows;
+}
+
+async function runInterpretation(domain, checkRows, queryMeta) {
+  const rows = [];
+  const rdapData = await fetchDomainRdap(domain);
+  rows.push(analyzeDomainExpiry(domain, rdapData));
+  rows.push(analyzeDnssec(domain, queryMeta.sawAd, queryMeta.hadSuccessfulLookup));
+
+  const apexTxt = checkRows.find(r => r.section === 'Main Domain - TXT (SPF etc)');
+  const dmarc = checkRows.find(r => r.section === 'DMARC');
+  rows.push(analyzeSpf(apexTxt));
+  rows.push(analyzeDmarc(dmarc));
+
+  const ptrRows = await analyzeMxPtr(domain);
+  rows.push(...ptrRows);
+
+  const takeoverRows = await analyzeTakeoverHints(checkRows);
+  rows.push(...takeoverRows);
+
+  return rows;
 }
 
 async function getProvider(domain) {
@@ -892,7 +1270,9 @@ function renderTable() {
   filtered.forEach((r, i) => {
     const badge = r.status === 'FOUND' ? 'badge-found' :
                   r.status === 'NOT FOUND' ? 'badge-notfound' :
-                  r.status === 'LOOKUP FAILED' ? 'badge-error' : 'badge-info';
+                  r.status === 'LOOKUP FAILED' ? 'badge-error' :
+                  r.status === 'FINDING' ? 'badge-finding' :
+                  r.status === 'WARN' ? 'badge-warn' : 'badge-info';
     const valueDisplay = r.value && r.value !== 'Not Found'
       ? esc(r.value).replace(/\n/g, '<br>')
       : '<span style="color:var(--muted)">—</span>';
@@ -946,6 +1326,7 @@ async function runAudit() {
   allResults = [];
   currentFilter = 'all';
   auditMeta = { startedAt: new Date().toISOString(), resolversUsed: new Set() };
+  const queryMeta = { sawAd: false, hadSuccessfulLookup: false };
 
   const btn = document.getElementById('auditBtn');
   btn.disabled = true;
@@ -995,6 +1376,12 @@ async function runAudit() {
   const checkResults = await mapPool(checks, QUERY_CONCURRENCY, async (check) => {
     const hostname = check.host(domain);
     const result = await queryDNS(hostname, check.type);
+    if (result.status === 'found' || result.status === 'absent') {
+      queryMeta.hadSuccessfulLookup = true;
+    }
+    if (result.ad) {
+      queryMeta.sawAd = true;
+    }
     const row = dnsResultToRow(check, hostname, result);
 
     completed++;
@@ -1005,6 +1392,11 @@ async function runAudit() {
   });
 
   allResults.push(...checkResults);
+
+  document.getElementById('progressLabel').textContent = 'Running analysis (expiry, SPF, DMARC, PTR)...';
+  const interpretRows = await runInterpretation(domain, checkResults, queryMeta);
+  allResults.push(...interpretRows);
+
   updateStats();
   updateMassFailureBanner();
   renderTable();
