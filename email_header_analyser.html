@@ -31,8 +31,15 @@
   .scam-reasons { margin-top:14px; display:flex; flex-direction:column; gap:6px; }
   .scam-reason { font-family:var(--font-mono); font-size:12px; color:#ffcccc; display:flex; gap:8px; }
   .scam-reason::before { content:"›"; color:#ff4444; flex-shrink:0; }
+  .impersonation-alert { display:none; background:#1a1200; border:3px solid #f59e0b; border-radius:4px; padding:24px 28px; margin-bottom:28px; box-shadow:8px 8px 0 #f59e0b; }
+  .impersonation-alert.show { display:block; }
+  .impersonation-title { font-size:22px; font-weight:900; color:#fbbf24; text-transform:uppercase; letter-spacing:2px; }
+  .impersonation-subtitle { font-family:var(--font-mono); font-size:12px; color:#fde68a; margin-top:6px; line-height:1.5; }
   .safe-banner { display:none; background:#001a0a; border:3px solid #1a7a4a; border-radius:4px; padding:20px 28px; margin-bottom:28px; box-shadow:6px 6px 0 #1a7a4a; }
   .safe-banner.show { display:flex; align-items:center; gap:16px; }
+  .safe-banner.bulk { background:#001a1a; border-color:#1d6fa4; box-shadow:6px 6px 0 #1d6fa4; }
+  .safe-banner.bulk .safe-title { color:#66ccff; }
+  .safe-banner.bulk .safe-subtitle { color:#99ddff; }
   .safe-title { font-size:20px; font-weight:900; color:#44ff88; text-transform:uppercase; letter-spacing:2px; }
   .safe-subtitle { font-family:var(--font-mono); font-size:11px; color:#88ffbb; margin-top:3px; }
   .input-card { background:var(--surface); border:2px solid var(--ink); border-radius:4px; padding:32px; margin-bottom:32px; box-shadow:6px 6px 0 var(--ink); animation:fadeUp 0.5s ease 0.1s both; }
@@ -134,11 +141,21 @@
       </div>
       <div class="scam-reasons" id="scamReasons"></div>
     </div>
+    <div class="impersonation-alert" id="impersonationAlert">
+      <div class="scam-alert-header">
+        <div class="scam-icon">&#9888;</div>
+        <div>
+          <div class="impersonation-title" id="impersonationTitle">Possible Brand Impersonation</div>
+          <div class="impersonation-subtitle" id="impersonationSubtitle">Authentication passed for the sending domain, but the brand identity may not be legitimate.</div>
+        </div>
+      </div>
+      <div class="scam-reasons" id="impersonationReasons"></div>
+    </div>
     <div class="safe-banner" id="safeBanner">
       <div style="font-size:28px">&#10003;</div>
       <div>
-        <div class="safe-title">Email Appears Legitimate</div>
-        <div class="safe-subtitle">No significant scam indicators detected. Always exercise caution.</div>
+        <div class="safe-title" id="safeTitle">Email Appears Legitimate</div>
+        <div class="safe-subtitle" id="safeSubtitle">No significant scam indicators detected. Always exercise caution.</div>
       </div>
     </div>
     <div class="score-section">
@@ -170,6 +187,44 @@ var parsedData = {};
 
 var FREE_PROVIDERS = ['gmail.com','yahoo.com','hotmail.com','outlook.com','live.com','aol.com','icloud.com','me.com','mac.com','protonmail.com','proton.me','mail.com','yandex.com','gmx.com','zoho.com','tutanota.com','fastmail.com'];
 var KNOWN_BRANDS = ['paypal','amazon','apple','microsoft','google','netflix','ebay','bank','barclays','lloyds','hsbc','natwest','santander','halifax','virgin','bt','sky','hmrc','dvla','nhs','royal mail','dhl','fedex','ups','hermes','evri','dpd','instagram','facebook','twitter','linkedin','whatsapp','spotify','steam','coinbase','binance','crypto'];
+
+// Official domains per brand (high-confidence impersonation only when sending domain is NOT listed).
+var BRAND_OFFICIAL_DOMAINS = {
+  paypal: ['paypal.com'],
+  amazon: ['amazon.com', 'amazon.co.uk'],
+  apple: ['apple.com', 'icloud.com'],
+  microsoft: ['microsoft.com', 'microsoftonline.com', 'office.com', 'office365.com', 'outlook.com'],
+  google: ['google.com', 'googlemail.com'],
+  netflix: ['netflix.com'],
+  ebay: ['ebay.com'],
+  barclays: ['barclays.com', 'barclays.co.uk'],
+  lloyds: ['lloydsbank.com', 'lloyds.com'],
+  hsbc: ['hsbc.com', 'hsbc.co.uk'],
+  natwest: ['natwest.com'],
+  santander: ['santander.co.uk'],
+  halifax: ['halifax.co.uk'],
+  virgin: ['virgin.com', 'virginmedia.com'],
+  bt: ['bt.com'],
+  sky: ['sky.com'],
+  hmrc: ['hmrc.gov.uk'],
+  dvla: ['dvla.gov.uk'],
+  nhs: ['nhs.uk', 'nhs.net'],
+  dhl: ['dhl.com'],
+  fedex: ['fedex.com'],
+  ups: ['ups.com'],
+  hermes: ['hermes.com', 'evri.com'],
+  evri: ['evri.com'],
+  dpd: ['dpd.co.uk', 'dpd.com'],
+  instagram: ['instagram.com', 'facebook.com', 'meta.com'],
+  facebook: ['facebook.com', 'meta.com'],
+  twitter: ['twitter.com', 'x.com'],
+  linkedin: ['linkedin.com'],
+  whatsapp: ['whatsapp.com'],
+  spotify: ['spotify.com'],
+  steam: ['steampowered.com', 'steamcommunity.com'],
+  coinbase: ['coinbase.com'],
+  binance: ['binance.com']
+};
 var URGENCY_WORDS = ['urgent','immediately','action required','verify now','suspended','account locked','unusual activity','security alert','confirm now','final notice','last chance','expires today','act now','click here','update required','compromised','suspicious','validate','reactivate','reset password','prize','winner','congratulations','free gift','offer expires','24 hours','payment overdue','refund','claim your','verify your'];
 
 // ---- Header parsing ----
@@ -288,11 +343,155 @@ function calcDelay(a, b) {
 }
 
 function warnHtml(w) {
-  var icons = { danger:'&#10005;', caution:'&#9888;', good:'&#10003;' };
-  return '<div class="warning-item ' + w.type + '"><div class="warning-icon">' + icons[w.type] + '</div><div class="warning-text"><strong>' + w.title + '</strong><span>' + w.desc + '</span></div></div>';
+  var icons = { danger:'&#10005;', caution:'&#9888;', good:'&#10003;', info:'&#8505;' };
+  var icon = icons[w.type] || icons.info;
+  return '<div class="warning-item ' + w.type + '"><div class="warning-icon">' + icon + '</div><div class="warning-text"><strong>' + esc(w.title) + '</strong><span>' + esc(w.desc) + '</span></div></div>';
 }
 
-function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+function esc(s) {
+  return s == null ? '' : String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function extractEmailDomain(headerValue) {
+  if (!headerValue) return null;
+  var m = headerValue.match(/@([^\s>]+)/);
+  return m ? m[1].replace(/\.$/, '').toLowerCase() : null;
+}
+
+function domainsRelated(fromDom, replyDom) {
+  if (!fromDom || !replyDom) return true;
+  if (fromDom === replyDom) return true;
+  if (fromDom.endsWith('.' + replyDom) || replyDom.endsWith('.' + fromDom)) return true;
+  var fromLabels = fromDom.split('.');
+  var replyLabels = replyDom.split('.');
+  for (var i = 0; i < fromLabels.length; i++) {
+    for (var j = 0; j < replyLabels.length; j++) {
+      var a = fromLabels[i], b = replyLabels[j];
+      if (a.length >= 4 && b.length >= 4 && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function resetSafeBanner() {
+  document.getElementById('safeTitle').textContent = 'Email Appears Legitimate';
+  document.getElementById('safeSubtitle').textContent = 'No significant scam indicators detected. Always exercise caution.';
+  document.getElementById('safeBanner').classList.remove('bulk');
+}
+
+function getRegistrableDomain(domain) {
+  if (!domain) return '';
+  var d = domain.toLowerCase().replace(/\.$/, '');
+  var parts = d.split('.');
+  if (parts.length >= 3 && parts[parts.length - 2] === 'co' && parts[parts.length - 1] === 'uk') {
+    return parts.slice(-3).join('.');
+  }
+  if (parts.length >= 2) return parts.slice(-2).join('.');
+  return d;
+}
+
+function isOfficialBrandDomain(domain, brand) {
+  if (!domain || !brand || !BRAND_OFFICIAL_DOMAINS[brand]) return false;
+  var low = domain.toLowerCase();
+  var allowed = BRAND_OFFICIAL_DOMAINS[brand];
+  for (var i = 0; i < allowed.length; i++) {
+    var off = allowed[i].toLowerCase();
+    if (low === off || low.endsWith('.' + off)) return true;
+    if (getRegistrableDomain(low) === getRegistrableDomain(off)) return true;
+  }
+  return false;
+}
+
+function detectBrandsInText(text) {
+  if (!text) return [];
+  var low = text.toLowerCase();
+  var found = [];
+  for (var brand in BRAND_OFFICIAL_DOMAINS) {
+    if (low.indexOf(brand) === -1) continue;
+    var re = new RegExp('\\b' + brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+    if (re.test(low)) found.push(brand);
+  }
+  return found;
+}
+
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  var row = [];
+  for (var i = 0; i <= b.length; i++) row[i] = i;
+  for (var j = 1; j <= a.length; j++) {
+    var prev = j;
+    for (var k = 1; k <= b.length; k++) {
+      var val = a[j - 1] === b[k - 1] ? row[k - 1] : Math.min(row[k - 1], row[k], prev) + 1;
+      row[k - 1] = prev;
+      prev = val;
+    }
+    row[b.length] = prev;
+  }
+  return row[b.length];
+}
+
+function isLookalikeDomain(domain, brand) {
+  if (!domain || !brand || !BRAND_OFFICIAL_DOMAINS[brand]) return false;
+  if (isOfficialBrandDomain(domain, brand)) return false;
+  var reg = getRegistrableDomain(domain);
+  var hostPart = reg.split('.')[0];
+  var allowed = BRAND_OFFICIAL_DOMAINS[brand];
+  for (var i = 0; i < allowed.length; i++) {
+    var officialHost = getRegistrableDomain(allowed[i]).split('.')[0];
+    if (hostPart !== officialHost && levenshtein(hostPart, officialHost) <= 2) return true;
+    if (hostPart.indexOf(brand) !== -1 && hostPart !== officialHost) return true;
+    if (reg.indexOf(brand + '-') !== -1 || reg.indexOf('-' + brand) !== -1) return true;
+    if (reg.indexOf('.' + brand + '.') !== -1) return true;
+  }
+  return false;
+}
+
+function analyseBrandImpersonation(from, addrDom) {
+  var result = { highConfidence: false, lookalike: false, brand: null, brandLabel: '' };
+  if (!addrDom) return result;
+
+  var dispName = '';
+  if (from) {
+    var dispM = from.match(/^"?([^"<]+)"?\s*</);
+    if (dispM) dispName = dispM[1].trim();
+  }
+
+  // High-confidence impersonation: display name only (not subject — newsletters often mention brands in subjects).
+  var brandsInDisplay = detectBrandsInText(dispName);
+  if (!brandsInDisplay.length) return result;
+
+  for (var i = 0; i < brandsInDisplay.length; i++) {
+    var brand = brandsInDisplay[i];
+    if (!isOfficialBrandDomain(addrDom, brand)) {
+      result.highConfidence = true;
+      result.brand = brand;
+      result.brandLabel = brand.charAt(0).toUpperCase() + brand.slice(1);
+      return result;
+    }
+  }
+
+  // Look-alike: only when display name also indicates the brand.
+  for (var j = 0; j < brandsInDisplay.length; j++) {
+    if (isLookalikeDomain(addrDom, brandsInDisplay[j])) {
+      result.lookalike = true;
+      result.brand = brandsInDisplay[j];
+      result.brandLabel = brandsInDisplay[j].charAt(0).toUpperCase() + brandsInDisplay[j].slice(1);
+      return result;
+    }
+  }
+  return result;
+}
+
+function formatBrandLabel(brand) {
+  if (!brand) return 'Brand';
+  return brand.charAt(0).toUpperCase() + brand.slice(1);
+}
 
 function infoRow(label, val) { return val ? '<tr><td>' + label + '</td><td>' + esc(val) + '</td></tr>' : ''; }
 
@@ -313,6 +512,9 @@ function analyseHeaders() {
   var contentType = getHeader(unfolded, 'Content-Type');
   var sender      = getHeader(unfolded, 'Sender');
   var xSpam       = getHeader(unfolded, 'X-Spam-Score') || getHeader(unfolded, 'X-Spam-Status');
+  var listUnsub   = getHeader(unfolded, 'List-Unsubscribe');
+  var listUnsubPost = getHeader(unfolded, 'List-Unsubscribe-Post');
+  var precedence  = getHeader(unfolded, 'Precedence');
 
   var authHeaders = getBestAuthHeaders(unfolded);
   var spfData     = parseAuthResult(authHeaders, 'spf');
@@ -330,10 +532,16 @@ function analyseHeaders() {
   // Scam checks
   var scamChecks = [];
   var scamReasons = [];
+  var displayNameSpoof = false;
+  var fullAuthPass = false;
+  var brandImpersonation = false;
+  var brandImpBrand = null;
+  var brandImpLabel = '';
+  var addrDom = from ? extractEmailDomain(from) : null;
 
   // SPF/DKIM/DMARC
   if (spfResult === 'pass')  scamChecks.push({type:'good',   title:'SPF Passed',  desc:'Sending server is authorised for this domain.'});
-  else scamChecks.push({type:'danger', title:'SPF Failed',  desc:'SPF returned "' + spfResult + '". The sending server may not be authorised.'});
+  else { scamChecks.push({type:'danger', title:'SPF Failed',  desc:'SPF returned "' + spfResult + '". The sending server may not be authorised.'}); scamReasons.push('SPF failed: ' + spfResult); }
 
   if (dkimResult === 'pass') scamChecks.push({type:'good',   title:'DKIM Passed', desc:'Email signature verified. Content is intact.'});
   else { scamChecks.push({type:'danger', title:'DKIM Failed', desc:'DKIM returned "' + dkimResult + '". Email signature could not be verified.'}); scamReasons.push('DKIM failed: ' + dkimResult); }
@@ -341,32 +549,67 @@ function analyseHeaders() {
   if (dmarcResult === 'pass') scamChecks.push({type:'good',  title:'DMARC Passed',desc:'Domain alignment verified.'});
   else { scamChecks.push({type:'danger', title:'DMARC Failed',desc:'DMARC returned "' + dmarcResult + '". This email may be spoofed.'}); scamReasons.push('DMARC failed: ' + dmarcResult); }
 
-  // Reply-To mismatch
-  if (replyTo && from) {
-    var fromDom  = (from.match(/@([^\s>]+)/) || [])[1];
-    var replyDom = (replyTo.match(/@([^\s>]+)/) || [])[1];
-    if (fromDom && replyDom && fromDom.toLowerCase() !== replyDom.toLowerCase()) {
-      scamChecks.push({type:'danger', title:'Reply-To Domain Mismatch', desc:'From domain (' + fromDom + ') differs from Reply-To domain (' + replyDom + '). Classic phishing technique.'});
-      scamReasons.push('Reply-To redirects to ' + replyDom);
-    } else {
-      scamChecks.push({type:'good', title:'Reply-To Matches From', desc:'Reply-To and From domains are consistent.'});
-    }
-  }
+  fullAuthPass = spfResult === 'pass' && dkimResult === 'pass' && dmarcResult === 'pass';
 
-  // Display name spoofing
-  if (from) {
+  // Brand impersonation (can override auth-pass — domain authentic ≠ brand legitimate)
+  var brandImp = analyseBrandImpersonation(from, addrDom);
+  if (brandImp.highConfidence) {
+    brandImpersonation = true;
+    brandImpBrand = brandImp.brand;
+    brandImpLabel = brandImp.brandLabel;
+    displayNameSpoof = true;
+    scamChecks.push({
+      type: 'danger',
+      title: 'Possible Brand Impersonation',
+      desc: 'Display/subject indicates "' + brandImpLabel + '" but mail is from ' + addrDom + ' (not an official ' + brandImpLabel + ' domain). Authentication only proves the sending domain is real — not that the brand is.'
+    });
+    scamReasons.push('Brand "' + brandImpLabel + '" indicated but sent from unrelated domain ' + addrDom);
+  } else if (brandImp.lookalike) {
+    scamChecks.push({
+      type: 'caution',
+      title: 'Look-alike Domain (heuristic)',
+      desc: 'Sending domain ' + addrDom + ' resembles ' + brandImp.brandLabel + '\'s official domains. Combined with brand wording in the message — treat with extra caution.'
+    });
+  } else if (from) {
+    // Legacy display-name check for brands without allowlist (bank, crypto, etc.)
     var dispM  = from.match(/^"?([^"<]+)"?\s*</);
     var emailM = from.match(/<([^>]+)>/);
     if (dispM && emailM) {
       var dispName  = dispM[1].trim().toLowerCase();
       var emailDom  = (emailM[1].split('@')[1] || '').toLowerCase();
       for (var b = 0; b < KNOWN_BRANDS.length; b++) {
+        if (BRAND_OFFICIAL_DOMAINS[KNOWN_BRANDS[b]]) continue;
         if (dispName.indexOf(KNOWN_BRANDS[b]) !== -1 && emailDom.indexOf(KNOWN_BRANDS[b]) === -1) {
+          displayNameSpoof = true;
           scamChecks.push({type:'danger', title:'Display Name Spoofing', desc:'Sender shows as "' + dispM[1].trim() + '" but email is from "' + emailM[1] + '". Common impersonation trick.'});
           scamReasons.push('Display name "' + dispM[1].trim() + '" does not match sending address');
           break;
         }
       }
+    }
+  }
+
+  // Reply-To mismatch — newsletters/ESPs often use a different Reply-To domain
+  if (replyTo && from) {
+    var fromDom  = extractEmailDomain(from);
+    var replyDom = extractEmailDomain(replyTo);
+    if (fromDom && replyDom && fromDom !== replyDom) {
+      var related = domainsRelated(fromDom, replyDom);
+      var replyFree = FREE_PROVIDERS.indexOf(replyDom) !== -1;
+
+      if (replyFree) {
+        scamChecks.push({type:'danger', title:'Suspicious Reply-To (Free Mail)', desc:'Reply-To uses free provider ' + replyDom + ' while From is ' + fromDom + '.'});
+        scamReasons.push('Reply-To redirects to free mail: ' + replyDom);
+      } else if (displayNameSpoof && !related) {
+        scamChecks.push({type:'danger', title:'Reply-To Mismatch + Display Spoof', desc:'Reply-To (' + replyDom + ') unrelated to From (' + fromDom + ') with display-name impersonation.'});
+        scamReasons.push('Reply-To unrelated to From with brand display spoof');
+      } else if (!related && !fullAuthPass) {
+        scamChecks.push({type:'caution', title:'Reply-To Mismatch (auth failed)', desc:'From (' + fromDom + ') differs from Reply-To (' + replyDom + ') and authentication did not all pass.'});
+      } else {
+        scamChecks.push({type:'good', title:'Reply-To on Different Domain', desc:'From (' + fromDom + ') and Reply-To (' + replyDom + ') differ — common for newsletters/ESPs. Only a concern if unrelated, look-alike, or free-mail.'});
+      }
+    } else if (fromDom && replyDom) {
+      scamChecks.push({type:'good', title:'Reply-To Matches From', desc:'Reply-To and From domains are consistent.'});
     }
   }
 
@@ -420,19 +663,65 @@ function analyseHeaders() {
 
   var generalWarns = [];
   if (xMailer) generalWarns.push({type:'caution', title:'X-Mailer Detected', desc:'Sent via: ' + xMailer});
-  if (spfResult === 'pass' && dkimResult === 'pass' && dmarcResult === 'pass') {
-    generalWarns.push({type:'good', title:'Full Authentication Passed', desc:'SPF, DKIM and DMARC all passed.'});
+  if (fullAuthPass) {
+    generalWarns.push({type:'good', title:'Full Authentication Passed', desc:'SPF, DKIM and DMARC all passed — sender domain is authenticated (not spoofed).'});
   }
 
-  // Score & verdict
+  var isBulkMail = !!(listUnsub || listUnsubPost || (precedence && /bulk|list/i.test(precedence)));
+  if (fullAuthPass && isBulkMail) {
+    generalWarns.push({type:'good', title:'Bulk / Marketing Indicators', desc:'List-Unsubscribe or bulk/list precedence present — typical newsletter or promotional mail (may still be spam to you, but not fraud).'});
+  }
+
+  // Score & verdict — banner must agree with score; brand impersonation can override auth-pass
   var dangers  = scamChecks.filter(function(c){ return c.type === 'danger'; }).length;
   var cautions = scamChecks.filter(function(c){ return c.type === 'caution'; }).length;
   var score = Math.max(0, Math.min(100, 100 - (spfResult!=='pass'?25:0) - (dkimResult!=='pass'?25:0) - (dmarcResult!=='pass'?20:0) - dangers*10 - cautions*4));
-  var isScam = dangers >= 2 || (dangers >= 1 && scamReasons.length >= 1);
+  if (brandImpersonation) score = Math.min(score, 35);
 
-  document.getElementById('scamAlert').className = 'scam-alert' + (isScam ? ' show' : '');
-  document.getElementById('safeBanner').className = 'safe-banner' + (!isScam ? ' show' : '');
-  if (isScam) document.getElementById('scamReasons').innerHTML = scamReasons.map(function(r){ return '<div class="scam-reason">' + esc(r) + '</div>'; }).join('');
+  var isScam = false;
+  if (brandImpersonation) {
+    isScam = true;
+  } else if (!fullAuthPass) {
+    isScam = dangers >= 2 || (dangers >= 1 && scamReasons.length >= 1);
+  }
+  if ((fullAuthPass || score >= 70) && !brandImpersonation) {
+    isScam = false;
+  }
+
+  document.getElementById('scamAlert').className = 'scam-alert' + (isScam && !brandImpersonation ? ' show' : '');
+  document.getElementById('impersonationAlert').className = 'impersonation-alert' + (brandImpersonation ? ' show' : '');
+  resetSafeBanner();
+  var safeBanner = document.getElementById('safeBanner');
+
+  if (brandImpersonation) {
+    safeBanner.className = 'safe-banner';
+    document.getElementById('impersonationTitle').textContent = 'Possible Brand Impersonation';
+    document.getElementById('impersonationSubtitle').textContent =
+      'Authenticated as ' + addrDom + ', but this is NOT ' + brandImpLabel + '\'s official domain. The sender domain is genuine — the brand identity may not be.';
+    document.getElementById('impersonationReasons').innerHTML = scamReasons.map(function(r) {
+      return '<div class="scam-reason">' + esc(r) + '</div>';
+    }).join('');
+  } else {
+    document.getElementById('impersonationReasons').innerHTML = '';
+  }
+
+  if (!isScam) {
+    safeBanner.className = 'safe-banner show' + (fullAuthPass && isBulkMail ? ' bulk' : '');
+    if (fullAuthPass && isBulkMail) {
+      document.getElementById('safeTitle').textContent = 'Authenticated Bulk / Marketing Mail';
+      document.getElementById('safeSubtitle').textContent = 'SPF, DKIM and DMARC passed. Looks like legitimate newsletter or promo mail — you may still mark it as spam, but it is not phishing.';
+    } else if (fullAuthPass) {
+      document.getElementById('safeTitle').textContent = 'Authenticated — Not a Scam';
+      document.getElementById('safeSubtitle').textContent = 'Full email authentication passed. This is not domain spoofing — still exercise normal caution with links and attachments.';
+    }
+  } else if (!brandImpersonation) {
+    safeBanner.className = 'safe-banner';
+  }
+  if (isScam && !brandImpersonation) {
+    document.getElementById('scamReasons').innerHTML = scamReasons.map(function(r){ return '<div class="scam-reason">' + esc(r) + '</div>'; }).join('');
+  } else {
+    document.getElementById('scamReasons').innerHTML = '';
+  }
 
   var sEl = document.getElementById('scoreNum');
   var vEl = document.getElementById('scoreVerdict');
@@ -440,12 +729,21 @@ function analyseHeaders() {
   var cls = score >= 70 ? 'good' : score >= 40 ? 'warn' : 'bad';
   sEl.className = 'score-number ' + cls;
   vEl.className = 'score-verdict ' + cls;
-  vEl.textContent = score >= 70 ? 'Trusted' : score >= 40 ? 'Suspicious' : 'Dangerous';
+  if (brandImpersonation) {
+    vEl.textContent = 'Brand Impersonation';
+  } else if (isScam) {
+    vEl.textContent = 'Likely Scam';
+  } else if (fullAuthPass && isBulkMail) {
+    vEl.textContent = 'Auth Bulk Mail';
+  } else {
+    vEl.textContent = score >= 70 ? 'Trusted' : score >= 40 ? 'Suspicious' : 'Dangerous';
+  }
 
   document.getElementById('infoTable').innerHTML = [
     infoRow('From', from), infoRow('To', to), infoRow('Subject', subject),
     infoRow('Date', date), infoRow('Message-ID', messageId), infoRow('Reply-To', replyTo),
-    infoRow('Return-Path', returnPath), infoRow('Sender', sender), infoRow('Content-Type', contentType)
+    infoRow('List-Unsubscribe', listUnsub), infoRow('Return-Path', returnPath),
+    infoRow('Sender', sender), infoRow('Content-Type', contentType)
   ].join('');
 
   document.getElementById('serverTable').innerHTML = [
@@ -474,7 +772,7 @@ function analyseHeaders() {
     ? allAuthRaw.map(function(h){ return '<tr><td>Auth-Results</td><td>' + esc(h) + '</td></tr>'; }).join('')
     : '<tr><td>Auth-Results</td><td style="color:var(--muted)">None found</td></tr>';
 
-  parsedData = { from:from, to:to, subject:subject, date:date, messageId:messageId, replyTo:replyTo, spfResult:spfResult, dkimResult:dkimResult, dmarcResult:dmarcResult, score:score, hops:hops, checks:scamChecks, warns:generalWarns, isScam:isScam, scamReasons:scamReasons };
+  parsedData = { from:from, to:to, subject:subject, date:date, messageId:messageId, replyTo:replyTo, spfResult:spfResult, dkimResult:dkimResult, dmarcResult:dmarcResult, score:score, hops:hops, checks:scamChecks, warns:generalWarns, isScam:isScam, scamReasons:scamReasons, fullAuthPass:fullAuthPass, isBulkMail:isBulkMail, brandImpersonation:brandImpersonation, brandImpLabel:brandImpLabel };
 
   document.getElementById('results').style.display = 'block';
   document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
@@ -484,14 +782,24 @@ function clearAll() {
   document.getElementById('headerInput').value = '';
   document.getElementById('results').style.display = 'none';
   document.getElementById('scamAlert').className = 'scam-alert';
+  document.getElementById('impersonationAlert').className = 'impersonation-alert';
+  document.getElementById('impersonationReasons').innerHTML = '';
   document.getElementById('safeBanner').className = 'safe-banner';
+  resetSafeBanner();
+}
+
+function exportVerdictLabel(d) {
+  if (d.brandImpersonation) return '*** BRAND IMPERSONATION (auth-passing look-alike) ***';
+  if (d.isScam) return '*** LIKELY SCAM ***';
+  if (d.fullAuthPass && d.isBulkMail) return 'Authenticated bulk/marketing mail (not a scam)';
+  return 'Appears Legitimate';
 }
 
 function exportTXT() {
   var d = parsedData;
   var t = 'EMAIL HEADER ANALYSIS\n' + '='.repeat(50) + '\n';
   t += 'Date: ' + new Date().toLocaleString() + '\n';
-  t += 'Verdict: ' + (d.isScam ? '*** LIKELY SCAM ***' : 'Appears Legitimate') + '\n';
+  t += 'Verdict: ' + exportVerdictLabel(d) + '\n';
   t += 'Trust Score: ' + d.score + '/100\n\n';
   t += 'AUTHENTICATION\n' + '-'.repeat(30) + '\n';
   t += 'SPF: ' + d.spfResult + '\nDKIM: ' + d.dkimResult + '\nDMARC: ' + d.dmarcResult + '\n\n';
@@ -507,7 +815,7 @@ function exportTXT() {
 function exportCSV() {
   var d = parsedData;
   var c = 'Category,Field,Value\n';
-  c += 'Verdict,Scam Detection,' + (d.isScam?'LIKELY SCAM':'Appears Legitimate') + '\n';
+  c += 'Verdict,Scam Detection,' + exportVerdictLabel(d) + '\n';
   c += 'Score,Trust Score,' + d.score + '/100\n';
   c += 'Auth,SPF,' + d.spfResult + '\nAuth,DKIM,' + d.dkimResult + '\nAuth,DMARC,' + d.dmarcResult + '\n';
   c += 'Info,From,"' + (d.from||'').replace(/"/g,'""') + '"\n';
