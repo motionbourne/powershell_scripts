@@ -11,10 +11,13 @@ No installations required — uses tools built into macOS and Linux.
 Run directly from Terminal with no download needed:
 
 ```bash
-bash <(curl -s "https://raw.githubusercontent.com/motionbourne/powershell_scripts/main/audit_dns.sh")
+bash <(curl -s "https://raw.githubusercontent.com/motionbourne/powershell_scripts/main/Audit_DNS_MAC.sh")
 ```
 
 You will be prompted to enter the domain you want to audit.
+
+> **Security note:** this runs a script straight from the internet. Review it first, or pin to a
+> specific commit (replace `main` with a commit hash) to run a fixed, audited version.
 
 ---
 
@@ -23,9 +26,9 @@ You will be prompted to enter the domain you want to audit.
 If you prefer to save the script locally:
 
 ```bash
-curl -o ~/audit_dns.sh "https://raw.githubusercontent.com/motionbourne/powershell_scripts/main/audit_dns.sh"
-chmod +x ~/audit_dns.sh
-~/audit_dns.sh
+curl -o ~/Audit_DNS_MAC.sh "https://raw.githubusercontent.com/motionbourne/powershell_scripts/main/Audit_DNS_MAC.sh"
+chmod +x ~/Audit_DNS_MAC.sh
+~/Audit_DNS_MAC.sh
 ```
 
 ---

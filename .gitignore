@@ -1,0 +1,11 @@
+# Local working backups (never publish)
+Older/
+
+# Generated audit / tool output — may contain sensitive recon or recovery keys.
+# These tools write reports + BitLocker keys locally; keep them out of the repo.
+DNS_Audit_*
+*BitLockerKey*.txt
+*-BitLockerKey-*.txt
+tools/
+*.xlsx
+*.csv

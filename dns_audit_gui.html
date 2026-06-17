@@ -471,6 +471,15 @@ let allResults = [];
 let currentFilter = 'all';
 let auditDomain = '';
 
+// Escape DNS-sourced values before injecting into the DOM. DNS records (TXT, CNAME,
+// nameservers, RDAP provider names) are controlled by the audited domain's owner, so a
+// hostile domain could otherwise inject HTML/JS into this page when audited.
+function esc(s) {
+  return s == null ? '' : String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 const checks = [
   // Core records
   { section: 'Main Domain - A Record',                 type: 'A',     host: d => d },
@@ -617,14 +626,14 @@ function renderTable() {
     const badge = r.status === 'FOUND' ? 'badge-found' :
                   r.status === 'NOT FOUND' ? 'badge-notfound' : 'badge-info';
     const valueDisplay = r.value && r.value !== 'Not Found'
-      ? r.value.replace(/\n/g, '<br>')
+      ? esc(r.value).replace(/\n/g, '<br>')
       : '<span style="color:var(--muted)">—</span>';
     html += `<tr class="result-row" style="animation-delay:${i * 0.02}s">
-      <td><div class="section-name">${r.section}</div><div class="record-type">${r.type}</div></td>
-      <td><span class="badge badge-info">${r.type}</span></td>
-      <td><div class="hostname">${r.hostname}</div></td>
+      <td><div class="section-name">${esc(r.section)}</div><div class="record-type">${esc(r.type)}</div></td>
+      <td><span class="badge badge-info">${esc(r.type)}</span></td>
+      <td><div class="hostname">${esc(r.hostname)}</div></td>
       <td><div class="value">${valueDisplay}</div></td>
-      <td><span class="badge ${badge}">${r.status}</span></td>
+      <td><span class="badge ${badge}">${esc(r.status)}</span></td>
     </tr>`;
   });
 
@@ -670,7 +679,7 @@ async function runAudit() {
   document.getElementById('tableWrap').innerHTML = `
     <div class="empty-state">
       <div class="empty-icon" style="animation: spin 1s linear infinite; display:inline-block">◈</div>
-      <h3 style="opacity:1">Auditing ${domain}...</h3>
+      <h3 style="opacity:1">Auditing ${esc(domain)}...</h3>
       <p>Checking DNS records via Google DNS</p>
     </div>`;
 
@@ -679,7 +688,7 @@ async function runAudit() {
   if (providerData) {
     document.getElementById('providerBanner').style.display = 'block';
     document.getElementById('providerBanner').innerHTML =
-      `DNS Provider: <strong>${providerData.provider}</strong> &nbsp;|&nbsp; Root: <strong>${providerData.root}</strong> &nbsp;|&nbsp; Nameservers: ${providerData.nameservers}`;
+      `DNS Provider: <strong>${esc(providerData.provider)}</strong> &nbsp;|&nbsp; Root: <strong>${esc(providerData.root)}</strong> &nbsp;|&nbsp; Nameservers: ${esc(providerData.nameservers)}`;
     allResults.push({ section: 'DNS Provider', type: 'NS', hostname: providerData.root, value: providerData.nameservers, status: 'INFO' });
   }
 

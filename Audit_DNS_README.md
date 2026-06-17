@@ -14,6 +14,10 @@ irm "https://raw.githubusercontent.com/motionbourne/powershell_scripts/main/Audi
 
 You will be prompted to enter the domain you want to audit.
 
+> **Security note:** this downloads and runs a script straight from the internet. Review it
+> first, or pin to a specific commit (replace `main` with a commit hash) to run a fixed,
+> audited version.
+
 ---
 
 ## What It Checks
