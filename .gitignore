@@ -1,11 +1,6 @@
-# Local working backups (never publish)
-Older/
-
-# Generated audit / tool output — may contain sensitive recon or recovery keys.
-# These tools write reports + BitLocker keys locally; keep them out of the repo.
-DNS_Audit_*
-*BitLockerKey*.txt
-*-BitLockerKey-*.txt
-tools/
-*.xlsx
-*.csv
+# This repo publishes ONLY the standalone HTML tools.
+# Everything else stays local and is ignored: PowerShell/bash scripts, docs,
+# generated audit output, BitLocker key files, and local Older/ backups.
+*
+!.gitignore
+!*.html
