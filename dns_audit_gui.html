@@ -907,7 +907,163 @@ function extractSpfRecords(txtValue) {
   return txtValue.split('\n').map(l => l.trim()).filter(l => /^v=spf1\b/i.test(l));
 }
 
-function analyzeSpf(apexTxtRow) {
+function splitSpfTerms(spf) {
+  return spf.trim().split(/\s+/).filter(Boolean);
+}
+
+function parseSpfTerm(term) {
+  if (/^v=spf1$/i.test(term)) return { type: 'version' };
+
+  const m = term.match(/^([+~?-])?(.*)$/s);
+  const qual = m[1] || '+';
+  const body = m[2];
+
+  if (/^redirect=/i.test(body)) return { type: 'redirect', target: body.replace(/^redirect=/i, '') };
+  if (/^exp=/i.test(body)) return { type: 'exp', target: body.replace(/^exp=/i, '') };
+  if (/^all$/i.test(body)) return { type: 'all', qual };
+  if (/^a(?:[:/].+)?$/i.test(body)) return { type: 'a', qual };
+  if (/^mx(?:[:/].+)?$/i.test(body)) return { type: 'mx', qual };
+  if (/^ptr(?:[:/].+)?$/i.test(body)) return { type: 'ptr', qual };
+  if (/^include:/i.test(body)) return { type: 'include', qual, target: body.replace(/^include:/i, '') };
+  if (/^exists:/i.test(body)) return { type: 'exists', qual, target: body.replace(/^exists:/i, '') };
+  if (/^ip[46]:/i.test(body)) return { type: 'ip', qual };
+  return { type: 'unknown', raw: term };
+}
+
+function analyzeSpfStructure(spf) {
+  const notes = [];
+  let worsen = null;
+
+  function setWorse(s) {
+    if (s === 'FINDING') worsen = 'FINDING';
+    else if (s === 'WARN' && worsen !== 'FINDING') worsen = 'WARN';
+  }
+
+  const terms = splitSpfTerms(spf);
+  let allIndex = -1;
+  let hasRedirect = false;
+  let hasAll = false;
+  const malformed = [];
+
+  terms.forEach((term, i) => {
+    const p = parseSpfTerm(term);
+    if (p.type === 'version') return;
+    if (p.type === 'unknown') malformed.push(term);
+    if (p.type === 'all') { hasAll = true; allIndex = i; }
+    if (p.type === 'redirect') hasRedirect = true;
+    if (p.type === 'ptr') {
+      notes.push('ptr mechanism present — deprecated (RFC 7208 §5.5); remove if possible');
+      setWorse('WARN');
+    }
+  });
+
+  if (allIndex >= 0 && allIndex < terms.length - 1) {
+    const ignored = terms.slice(allIndex + 1).join(', ');
+    notes.push(`"${ignored}" appears after all and is ignored — move before all`);
+    setWorse('FINDING');
+  }
+
+  if (hasRedirect && hasAll) {
+    notes.push('redirect= and all both present — redirect is ignored when all is present');
+    setWorse('WARN');
+  }
+
+  if (malformed.length) {
+    notes.push(`malformed/unknown SPF term(s): ${malformed.join(', ')}`);
+    setWorse('WARN');
+  }
+
+  return { notes, worsen };
+}
+
+async function fetchSpfForDomain(domain) {
+  const result = await queryDNS(domain, 'TXT');
+  if (result.status === 'error') {
+    return { ok: false, reason: 'lookup-failed', detail: result.message };
+  }
+  if (result.status === 'absent' || !result.value || result.value === 'Not Found') {
+    return { ok: false, reason: 'void' };
+  }
+  const records = extractSpfRecords(result.value);
+  if (records.length === 0) return { ok: false, reason: 'void' };
+  if (records.length > 1) return { ok: false, reason: 'multiple', spf: records[0] };
+  return { ok: true, spf: records[0] };
+}
+
+async function evaluateSpfDnsLookups(spf, ctx) {
+  if (ctx.stopped || ctx.depth > ctx.maxDepth) return ctx;
+
+  const terms = splitSpfTerms(spf);
+
+  for (const term of terms) {
+    if (ctx.stopped) break;
+    const p = parseSpfTerm(term);
+    if (p.type === 'version' || p.type === 'exp' || p.type === 'ip') continue;
+
+    if (p.type === 'redirect') {
+      ctx.total++;
+      if (ctx.total > 10) { ctx.stopped = true; break; }
+      const key = `redirect:${p.target.toLowerCase()}`;
+      if (!ctx.stack.has(key) && ctx.depth < ctx.maxDepth) {
+        ctx.stack.add(key);
+        const fetched = await fetchSpfForDomain(p.target);
+        if (!fetched.ok) {
+          ctx.unresolved++;
+          if (fetched.reason === 'void') ctx.voidLookups++;
+        } else {
+          ctx.depth++;
+          await evaluateSpfDnsLookups(fetched.spf, ctx);
+          ctx.depth--;
+        }
+        ctx.stack.delete(key);
+      }
+      return ctx;
+    }
+
+    if (p.type === 'include') {
+      ctx.total++;
+      if (ctx.total > 10) { ctx.stopped = true; break; }
+      const key = `include:${p.target.toLowerCase()}`;
+      if (!ctx.stack.has(key) && ctx.depth < ctx.maxDepth) {
+        ctx.stack.add(key);
+        const fetched = await fetchSpfForDomain(p.target);
+        if (!fetched.ok) {
+          ctx.unresolved++;
+          if (fetched.reason === 'void') ctx.voidLookups++;
+        } else {
+          ctx.depth++;
+          await evaluateSpfDnsLookups(fetched.spf, ctx);
+          ctx.depth--;
+        }
+        ctx.stack.delete(key);
+      }
+      continue;
+    }
+
+    if (['a', 'mx', 'ptr', 'exists'].includes(p.type)) {
+      ctx.total++;
+      if (ctx.total > 10) ctx.stopped = true;
+    }
+  }
+
+  return ctx;
+}
+
+async function countRecursiveSpfLookups(spf) {
+  const ctx = {
+    total: 0,
+    stack: new Set(),
+    depth: 0,
+    maxDepth: 10,
+    unresolved: 0,
+    voidLookups: 0,
+    stopped: false
+  };
+  await evaluateSpfDnsLookups(spf, ctx);
+  return ctx;
+}
+
+async function analyzeSpf(apexTxtRow) {
   const hostname = apexTxtRow ? apexTxtRow.hostname : '';
   if (!apexTxtRow || apexTxtRow.status === 'LOOKUP FAILED') {
     return {
@@ -956,11 +1112,31 @@ function analyzeSpf(apexTxtRow) {
     notes.push('no "all" mechanism — effectively fail-open');
     status = 'WARN';
   }
-  const lookupParts = (spf.match(/\b(include|a|mx|ptr|exists|redirect):/gi) || []).length;
-  if (lookupParts >= 8) {
-    notes.push(`high DNS lookup count (${lookupParts} mechanisms — 10-lookup limit risk)`);
+
+  const structure = analyzeSpfStructure(spf);
+  notes.push(...structure.notes);
+  if (structure.worsen === 'FINDING') status = 'FINDING';
+  else if (structure.worsen === 'WARN' && status === 'FOUND') status = 'WARN';
+
+  const lookupCtx = await countRecursiveSpfLookups(spf);
+  const totalLookups = lookupCtx.total;
+
+  if (lookupCtx.voidLookups > 0) {
+    notes.push(`void lookup(s) — include/exists target has no SPF (${lookupCtx.voidLookups})`);
     if (status === 'FOUND') status = 'WARN';
   }
+  if (lookupCtx.unresolved > 0) {
+    notes.push(`could not fully evaluate — ${lookupCtx.unresolved} include/redirect target(s) unresolved`);
+    if (status === 'FOUND') status = 'WARN';
+  }
+  if (totalLookups > 10) {
+    notes.push(`SPF exceeds the 10-DNS-lookup limit (${totalLookups}) → PermError; SPF will be ignored by receivers`);
+    status = 'FINDING';
+  } else if (totalLookups >= 8) {
+    notes.push(`SPF DNS lookup count ${totalLookups}/10 — approaching PermError limit`);
+    if (status === 'FOUND') status = 'WARN';
+  }
+
   return {
     section: 'SPF Analysis',
     type: 'TXT',
@@ -1172,7 +1348,7 @@ async function runInterpretation(domain, checkRows, queryMeta) {
 
   const apexTxt = checkRows.find(r => r.section === 'Main Domain - TXT (SPF etc)');
   const dmarc = checkRows.find(r => r.section === 'DMARC');
-  rows.push(analyzeSpf(apexTxt));
+  rows.push(await analyzeSpf(apexTxt));
   rows.push(analyzeDmarc(dmarc));
 
   const ptrRows = await analyzeMxPtr(domain);
