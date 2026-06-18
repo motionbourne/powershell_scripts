@@ -561,7 +561,7 @@ function analyseHeaders() {
     scamChecks.push({
       type: 'danger',
       title: 'Possible Brand Impersonation',
-      desc: 'Display/subject indicates "' + brandImpLabel + '" but mail is from ' + addrDom + ' (not an official ' + brandImpLabel + ' domain). Authentication only proves the sending domain is real — not that the brand is.'
+      desc: 'Display name indicates "' + brandImpLabel + '" but mail is from ' + addrDom + ' (not an official ' + brandImpLabel + ' domain). Authentication only proves the sending domain is real — not that the brand is.'
     });
     scamReasons.push('Brand "' + brandImpLabel + '" indicated but sent from unrelated domain ' + addrDom);
   } else if (brandImp.lookalike) {
