@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://dns.google https://cloudflare-dns.com https://rdap.org; img-src 'self' data:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://dns.google https://cloudflare-dns.com https:; img-src 'self' data:;">
 <title>DNS Audit Tool</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" crossorigin="anonymous" referrerpolicy="no-referrer">
 <style>
@@ -811,11 +811,26 @@ function vcardField(vcard, names) {
 async function fetchDomainRdap(domain) {
   try {
     const rdap = await fetchWithTimeout(`https://rdap.org/domain/${encodeURIComponent(domain)}`);
-    if (!rdap.ok) return null;
-    return await rdap.json();
+    if (!rdap.ok) {
+      return { ok: false, error: `RDAP HTTP ${rdap.status}` };
+    }
+    return { ok: true, data: await rdap.json() };
   } catch (e) {
-    return null;
+    return {
+      ok: false,
+      error: e.name === 'AbortError' ? 'RDAP lookup timed out' : (e.message || 'RDAP lookup failed')
+    };
   }
+}
+
+function providerFromRdapData(data) {
+  if (!data || !Array.isArray(data.entities)) return null;
+  for (const entity of data.entities) {
+    if (!entity || typeof entity !== 'object') continue;
+    const fromVcard = vcardField(entity.vcardArray, ['fn', 'org']);
+    if (fromVcard) return fromVcard;
+  }
+  return null;
 }
 
 function parseDomainExpiry(rdapData) {
@@ -828,8 +843,18 @@ function parseDomainExpiry(rdapData) {
   return { date, days, iso: exp.eventDate.slice(0, 10) };
 }
 
-function analyzeDomainExpiry(domain, rdapData) {
-  const exp = parseDomainExpiry(rdapData);
+function analyzeDomainExpiry(domain, rdapResult) {
+  if (!rdapResult || rdapResult.ok === false) {
+    const err = rdapResult && rdapResult.error;
+    return {
+      section: 'Domain Expiry',
+      type: 'RDAP',
+      hostname: domain,
+      value: err ? `Registry lookup unavailable: ${err}` : 'Expiration date not available from RDAP',
+      status: err ? 'LOOKUP FAILED' : 'INFO'
+    };
+  }
+  const exp = parseDomainExpiry(rdapResult.data);
   if (!exp) {
     return {
       section: 'Domain Expiry',
@@ -1141,8 +1166,8 @@ async function analyzeTakeoverHints(checkRows) {
 
 async function runInterpretation(domain, checkRows, queryMeta) {
   const rows = [];
-  const rdapData = await fetchDomainRdap(domain);
-  rows.push(analyzeDomainExpiry(domain, rdapData));
+  const rdapResult = await fetchDomainRdap(domain);
+  rows.push(analyzeDomainExpiry(domain, rdapResult));
   rows.push(analyzeDnssec(domain, queryMeta.sawAd, queryMeta.hadSuccessfulLookup));
 
   const apexTxt = checkRows.find(r => r.section === 'Main Domain - TXT (SPF etc)');
@@ -1168,30 +1193,23 @@ async function getProvider(domain) {
   const root = parts.length >= 2 ? `${parts[parts.length - 2]}.${parts[parts.length - 1]}` : firstNS;
 
   let provider = 'Unknown';
-  try {
-    const rdap = await fetchWithTimeout(`https://rdap.org/domain/${encodeURIComponent(root)}`);
-    if (rdap.ok) {
-      const data = await rdap.json();
-      if (Array.isArray(data.entities)) {
-        for (const entity of data.entities) {
-          if (!entity || typeof entity !== 'object') continue;
-          const fromVcard = vcardField(entity.vcardArray, ['fn', 'org']);
-          if (fromVcard) {
-            provider = fromVcard;
-            break;
-          }
-        }
-      }
-    }
-  } catch (e) {
-    // RDAP failure is non-fatal; nameservers still useful.
+  let rdapUnavailable = false;
+  const rdapResult = await fetchDomainRdap(root);
+  if (rdapResult.ok) {
+    const name = providerFromRdapData(rdapResult.data);
+    if (name) provider = name;
+  } else {
+    rdapUnavailable = true;
+    provider = 'Registry lookup unavailable';
   }
 
   return {
     provider,
     root,
     nameservers: nsResult.value.split('\n').join(', '),
-    resolver: nsResult.resolver
+    resolver: nsResult.resolver,
+    rdapUnavailable,
+    rdapError: rdapUnavailable ? rdapResult.error : null
   };
 }
 
@@ -1358,14 +1376,19 @@ async function runAudit() {
   const providerData = await getProvider(domain);
   if (providerData) {
     document.getElementById('providerBanner').style.display = 'block';
-    document.getElementById('providerBanner').innerHTML =
-      `DNS Provider: <strong>${esc(providerData.provider)}</strong> &nbsp;|&nbsp; Root: <strong>${esc(providerData.root)}</strong> &nbsp;|&nbsp; Nameservers: ${esc(providerData.nameservers)}`;
+    let banner = `DNS Provider: <strong>${esc(providerData.provider)}</strong> &nbsp;|&nbsp; Root: <strong>${esc(providerData.root)}</strong> &nbsp;|&nbsp; Nameservers: ${esc(providerData.nameservers)}`;
+    if (providerData.rdapUnavailable && providerData.rdapError) {
+      banner += ` &nbsp;|&nbsp; <span style="color:var(--yellow)">RDAP: ${esc(providerData.rdapError)}</span>`;
+    }
+    document.getElementById('providerBanner').innerHTML = banner;
     allResults.push({
       section: 'DNS Provider',
       type: 'NS',
       hostname: providerData.root,
-      value: providerData.nameservers,
-      status: 'INFO',
+      value: providerData.rdapUnavailable
+        ? `${providerData.nameservers} (registry lookup unavailable)`
+        : providerData.nameservers,
+      status: providerData.rdapUnavailable ? 'LOOKUP FAILED' : 'INFO',
       resolver: providerData.resolver
     });
     updateStats();
