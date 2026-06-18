@@ -1008,8 +1008,8 @@ async function evaluateSpfDnsLookups(spf, ctx) {
         ctx.stack.add(key);
         const fetched = await fetchSpfForDomain(p.target);
         if (!fetched.ok) {
-          ctx.unresolved++;
           if (fetched.reason === 'void') ctx.voidLookups++;
+          else ctx.unresolved++;
         } else {
           ctx.depth++;
           await evaluateSpfDnsLookups(fetched.spf, ctx);
@@ -1028,8 +1028,8 @@ async function evaluateSpfDnsLookups(spf, ctx) {
         ctx.stack.add(key);
         const fetched = await fetchSpfForDomain(p.target);
         if (!fetched.ok) {
-          ctx.unresolved++;
           if (fetched.reason === 'void') ctx.voidLookups++;
+          else ctx.unresolved++;
         } else {
           ctx.depth++;
           await evaluateSpfDnsLookups(fetched.spf, ctx);
@@ -1340,16 +1340,24 @@ async function analyzeTakeoverHints(checkRows) {
   return rows;
 }
 
+const ANALYSIS_PAIRED = [
+  { srcSection: 'Main Domain - TXT (SPF etc)', analyze: analyzeSpf },
+  { srcSection: 'DMARC', analyze: analyzeDmarc }
+];
+
 async function runInterpretation(domain, checkRows, queryMeta) {
   const rows = [];
   const rdapResult = await fetchDomainRdap(domain);
   rows.push(analyzeDomainExpiry(domain, rdapResult));
   rows.push(analyzeDnssec(domain, queryMeta.sawAd, queryMeta.hadSuccessfulLookup));
 
-  const apexTxt = checkRows.find(r => r.section === 'Main Domain - TXT (SPF etc)');
-  const dmarc = checkRows.find(r => r.section === 'DMARC');
-  rows.push(await analyzeSpf(apexTxt));
-  rows.push(analyzeDmarc(dmarc));
+  for (const { srcSection, analyze } of ANALYSIS_PAIRED) {
+    const srcRow = checkRows.find(r => r.section === srcSection);
+    if (srcRow && srcRow.status === 'FOUND') {
+      srcRow.status = 'INFO';
+    }
+    rows.push(await analyze(srcRow));
+  }
 
   const ptrRows = await analyzeMxPtr(domain);
   rows.push(...ptrRows);
