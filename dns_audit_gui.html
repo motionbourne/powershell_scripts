@@ -505,6 +505,8 @@
     <div class="export-row" id="exportRow" style="display:none">
       <button class="btn-export" onclick="exportCSV()">⬇ Export CSV</button>
       <button class="btn-export" onclick="exportTXT()">⬇ Export TXT</button>
+      <button class="btn-export" onclick="exportFoundCSV()">⬇ Export Found (CSV)</button>
+      <button class="btn-export" onclick="exportFoundTXT()">⬇ Export Found (TXT)</button>
     </div>
   </div>
 
@@ -1615,25 +1617,31 @@ async function runAudit() {
   btn.innerHTML = 'Run Audit';
 }
 
-function exportCSV() {
+// "Found" export scope mirrors the "Found" filter button: green FOUND records + blue INFO/analysis rows.
+function foundRows() {
+  return allResults.filter(r => r.status === 'FOUND' || r.status === 'INFO');
+}
+
+function buildCSV(rows) {
   let csv = 'Section,Type,Hostname,Value,Status,Resolver\n';
-  allResults.forEach(r => {
+  rows.forEach(r => {
     const val = (r.value || '').replace(/\n/g, ' ').replace(/"/g, '""');
     csv += `"${r.section}","${r.type}","${r.hostname}","${val}","${r.status}","${r.resolver || ''}"\n`;
   });
   const stamp = auditMeta.startedAt || new Date().toISOString();
   csv += `"","","","Resolvers: ${resolverExportLabel()} | Audit UTC: ${stamp}","",""\n`;
-  download(`DNS_Audit_${auditDomain}_${stamp.slice(0, 10)}.csv`, csv, 'text/csv');
+  return csv;
 }
 
-function exportTXT() {
+function buildTXT(rows, scopeLabel) {
   const stamp = auditMeta.startedAt || new Date().toISOString();
   let txt = `DNS AUDIT REPORT\n`;
   txt += `Domain    : ${auditDomain}\n`;
   txt += `Audit UTC : ${stamp}\n`;
   txt += `Resolvers : ${resolverExportLabel()}\n`;
+  if (scopeLabel) txt += `Scope     : ${scopeLabel}\n`;
   txt += `${'='.repeat(60)}\n\n`;
-  allResults.forEach(r => {
+  rows.forEach(r => {
     txt += `${r.section} [${r.type}]\n`;
     txt += `Hostname : ${r.hostname}\n`;
     txt += `Value    : ${r.value}\n`;
@@ -1641,7 +1649,27 @@ function exportTXT() {
     if (r.resolver) txt += `Resolver : ${r.resolver}\n`;
     txt += `${'-'.repeat(40)}\n`;
   });
-  download(`DNS_Audit_${auditDomain}_${stamp.slice(0, 10)}.txt`, txt, 'text/plain');
+  return txt;
+}
+
+function exportCSV() {
+  const stamp = auditMeta.startedAt || new Date().toISOString();
+  download(`DNS_Audit_${auditDomain}_${stamp.slice(0, 10)}.csv`, buildCSV(allResults), 'text/csv');
+}
+
+function exportTXT() {
+  const stamp = auditMeta.startedAt || new Date().toISOString();
+  download(`DNS_Audit_${auditDomain}_${stamp.slice(0, 10)}.txt`, buildTXT(allResults), 'text/plain');
+}
+
+function exportFoundCSV() {
+  const stamp = auditMeta.startedAt || new Date().toISOString();
+  download(`DNS_Audit_${auditDomain}_${stamp.slice(0, 10)}_found.csv`, buildCSV(foundRows()), 'text/csv');
+}
+
+function exportFoundTXT() {
+  const stamp = auditMeta.startedAt || new Date().toISOString();
+  download(`DNS_Audit_${auditDomain}_${stamp.slice(0, 10)}_found.txt`, buildTXT(foundRows(), 'Found records only (FOUND + INFO)'), 'text/plain');
 }
 
 function download(filename, content, type) {
