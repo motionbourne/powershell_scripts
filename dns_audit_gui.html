@@ -835,6 +835,63 @@ function providerFromRdapData(data) {
   return null;
 }
 
+function parseRegistrar(rdapData) {
+  if (!rdapData || !Array.isArray(rdapData.entities)) return null;
+  const reg = rdapData.entities.find(e =>
+    e && Array.isArray(e.roles) && e.roles.includes('registrar'));
+  if (!reg) return null;
+  const name = vcardField(reg.vcardArray, ['fn', 'org']);
+  if (!name) return null;
+
+  let ianaId = null;
+  if (Array.isArray(reg.publicIds)) {
+    const pid = reg.publicIds.find(p => p && typeof p.type === 'string' && /iana/i.test(p.type));
+    if (pid && pid.identifier) ianaId = String(pid.identifier);
+  }
+
+  let abuseEmail = null;
+  if (Array.isArray(reg.entities)) {
+    const abuse = reg.entities.find(e =>
+      e && Array.isArray(e.roles) && e.roles.includes('abuse'));
+    if (abuse) abuseEmail = vcardField(abuse.vcardArray, ['email']);
+  }
+
+  return { name, ianaId, abuseEmail };
+}
+
+function analyzeRegistrar(domain, rdapResult) {
+  if (!rdapResult || rdapResult.ok === false) {
+    const err = rdapResult && rdapResult.error;
+    return {
+      section: 'Registrar',
+      type: 'RDAP',
+      hostname: domain,
+      value: err ? `Registry lookup unavailable: ${err}` : 'Registry lookup unavailable',
+      status: err ? 'LOOKUP FAILED' : 'INFO'
+    };
+  }
+  const reg = parseRegistrar(rdapResult.data);
+  if (!reg) {
+    return {
+      section: 'Registrar',
+      type: 'RDAP',
+      hostname: domain,
+      value: 'Registrar not listed in RDAP',
+      status: 'INFO'
+    };
+  }
+  let value = `Registrar: ${reg.name}`;
+  if (reg.ianaId) value += ` (IANA ${reg.ianaId})`;
+  if (reg.abuseEmail) value += ` — abuse: ${reg.abuseEmail}`;
+  return {
+    section: 'Registrar',
+    type: 'RDAP',
+    hostname: domain,
+    value,
+    status: 'INFO'
+  };
+}
+
 function parseDomainExpiry(rdapData) {
   if (!rdapData || !Array.isArray(rdapData.events)) return null;
   const exp = rdapData.events.find(e => e && e.eventAction === 'expiration' && e.eventDate);
@@ -1351,6 +1408,7 @@ async function runInterpretation(domain, checkRows, queryMeta) {
   const rows = [];
   const rdapResult = await fetchDomainRdap(domain);
   rows.push(analyzeDomainExpiry(domain, rdapResult));
+  rows.push(analyzeRegistrar(domain, rdapResult));
   rows.push(analyzeDnssec(domain, queryMeta.sawAd, queryMeta.hadSuccessfulLookup));
 
   for (const { srcSection, analyze } of ANALYSIS_PAIRED) {
