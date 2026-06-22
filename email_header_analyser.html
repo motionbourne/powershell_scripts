@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https:; img-src 'self' data:;">
 <title>Email Header Analyser</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Epilogue:wght@400;600;800;900&display=swap" rel="stylesheet" crossorigin="anonymous" referrerpolicy="no-referrer">
 <style>
@@ -352,6 +352,90 @@ function esc(s) {
   return s == null ? '' : String(s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// --- Registrar (RDAP) lookup -------------------------------------------------
+// The sending domain is looked up live via rdap.org (which 302-redirects to the
+// per-TLD registry); CSP connect-src allows https: for that redirect chain.
+function rdapFetchWithTimeout(url, timeoutMs) {
+  var controller = new AbortController();
+  var timer = setTimeout(function(){ controller.abort(); }, timeoutMs || 6000);
+  return fetch(url, { signal: controller.signal }).finally(function(){ clearTimeout(timer); });
+}
+
+function vcardField(vcard, names) {
+  if (!Array.isArray(vcard) || vcard.length < 2 || !Array.isArray(vcard[1])) return null;
+  for (var i = 0; i < vcard[1].length; i++) {
+    var row = vcard[1][i];
+    if (!Array.isArray(row) || row.length < 4) continue;
+    if (names.indexOf(row[0]) !== -1 && row[3]) return String(row[3]);
+  }
+  return null;
+}
+
+function parseRegistrar(rdapData) {
+  if (!rdapData || !Array.isArray(rdapData.entities)) return null;
+  var reg = null;
+  for (var i = 0; i < rdapData.entities.length; i++) {
+    var e = rdapData.entities[i];
+    if (e && Array.isArray(e.roles) && e.roles.indexOf('registrar') !== -1) { reg = e; break; }
+  }
+  if (!reg) return null;
+  var name = vcardField(reg.vcardArray, ['fn', 'org']);
+  if (!name) return null;
+
+  var ianaId = null;
+  if (Array.isArray(reg.publicIds)) {
+    for (var j = 0; j < reg.publicIds.length; j++) {
+      var pid = reg.publicIds[j];
+      if (pid && typeof pid.type === 'string' && /iana/i.test(pid.type) && pid.identifier) {
+        ianaId = String(pid.identifier); break;
+      }
+    }
+  }
+
+  var abuseEmail = null;
+  if (Array.isArray(reg.entities)) {
+    for (var k = 0; k < reg.entities.length; k++) {
+      var ae = reg.entities[k];
+      if (ae && Array.isArray(ae.roles) && ae.roles.indexOf('abuse') !== -1) {
+        abuseEmail = vcardField(ae.vcardArray, ['email']); break;
+      }
+    }
+  }
+
+  return { name: name, ianaId: ianaId, abuseEmail: abuseEmail };
+}
+
+function registrarString(reg) {
+  var v = reg.name;
+  if (reg.ianaId) v += ' (IANA ' + reg.ianaId + ')';
+  if (reg.abuseEmail) v += ' — abuse: ' + reg.abuseEmail;
+  return v;
+}
+
+// Fetch RDAP for `domain` and write the result into cell #cellId via textContent
+// (textContent, not innerHTML — RDAP text is attacker-influenceable). Fails loud.
+function lookupRegistrarInto(cellId, domain) {
+  var cell = document.getElementById(cellId);
+  if (!cell || !domain) return;
+  rdapFetchWithTimeout('https://rdap.org/domain/' + encodeURIComponent(domain), 6000)
+    .then(function(res){
+      if (!res.ok) throw new Error('RDAP HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function(data){
+      var reg = parseRegistrar(data);
+      if (!reg) { cell.textContent = 'Registrar not listed in RDAP'; cell.style.color = 'var(--muted)'; return; }
+      var v = registrarString(reg);
+      cell.textContent = v;
+      cell.style.color = '';
+      parsedData.registrar = v;
+    })
+    .catch(function(e){
+      cell.textContent = 'Registry lookup unavailable: ' + (e.name === 'AbortError' ? 'RDAP timed out' : (e.message || 'RDAP failed'));
+      cell.style.color = 'var(--muted)';
+    });
 }
 
 function extractEmailDomain(headerValue) {
@@ -739,11 +823,16 @@ function analyseHeaders() {
     vEl.textContent = score >= 70 ? 'Trusted' : score >= 40 ? 'Suspicious' : 'Dangerous';
   }
 
+  var regDomain = addrDom ? getRegistrableDomain(addrDom) : '';
+  var registrarRow = regDomain
+    ? '<tr><td>Registrar (' + esc(regDomain) + ')</td><td id="registrarCell" style="color:var(--muted)">Looking up registrar…</td></tr>'
+    : '';
   document.getElementById('infoTable').innerHTML = [
     infoRow('From', from), infoRow('To', to), infoRow('Subject', subject),
     infoRow('Date', date), infoRow('Message-ID', messageId), infoRow('Reply-To', replyTo),
     infoRow('List-Unsubscribe', listUnsub), infoRow('Return-Path', returnPath),
-    infoRow('Sender', sender), infoRow('Content-Type', contentType)
+    infoRow('Sender', sender), infoRow('Content-Type', contentType),
+    registrarRow
   ].join('');
 
   document.getElementById('serverTable').innerHTML = [
@@ -776,6 +865,8 @@ function analyseHeaders() {
 
   document.getElementById('results').style.display = 'block';
   document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+
+  if (regDomain) lookupRegistrarInto('registrarCell', regDomain);
 }
 
 function clearAll() {
@@ -804,7 +895,8 @@ function exportTXT() {
   t += 'AUTHENTICATION\n' + '-'.repeat(30) + '\n';
   t += 'SPF: ' + d.spfResult + '\nDKIM: ' + d.dkimResult + '\nDMARC: ' + d.dmarcResult + '\n\n';
   t += 'INFO\n' + '-'.repeat(30) + '\n';
-  t += 'From: ' + (d.from||'-') + '\nTo: ' + (d.to||'-') + '\nSubject: ' + (d.subject||'-') + '\nDate: ' + (d.date||'-') + '\n\n';
+  t += 'From: ' + (d.from||'-') + '\nTo: ' + (d.to||'-') + '\nSubject: ' + (d.subject||'-') + '\nDate: ' + (d.date||'-') + '\n';
+  t += 'Registrar: ' + (d.registrar||'-') + '\n\n';
   t += 'HOPS\n' + '-'.repeat(30) + '\n';
   d.hops.forEach(function(h){ t += 'Hop ' + h.index + ': ' + h.from + ' > ' + h.by + '\n'; });
   t += '\nCHECKS\n' + '-'.repeat(30) + '\n';
@@ -820,6 +912,7 @@ function exportCSV() {
   c += 'Auth,SPF,' + d.spfResult + '\nAuth,DKIM,' + d.dkimResult + '\nAuth,DMARC,' + d.dmarcResult + '\n';
   c += 'Info,From,"' + (d.from||'').replace(/"/g,'""') + '"\n';
   c += 'Info,Subject,"' + (d.subject||'').replace(/"/g,'""') + '"\n';
+  c += 'Info,Registrar,"' + (d.registrar||'').replace(/"/g,'""') + '"\n';
   d.hops.forEach(function(h){ c += 'Hop,Hop ' + h.index + ',' + h.from + ' > ' + h.by + '\n'; });
   d.checks.concat(d.warns).forEach(function(w){ c += w.type + ',' + w.title + ',"' + w.desc.replace(/"/g,'""') + '"\n'; });
   download('Email_Analysis_' + new Date().toISOString().slice(0,10) + '.csv', c, 'text/csv');
