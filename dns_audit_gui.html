@@ -802,19 +802,14 @@ function dnsResultToRow(check, hostname, result) {
 }
 
 function classifyTxtRecord(rec) {
-  const s = rec.toLowerCase();
-  if (/^v=spf1\b/.test(s)) return 'SPF';
-  if (/^v=dkim1\b/.test(s)) return 'DKIM';
-  const m = rec.match(/^([a-z0-9_-]+)\s*=/i);
-  if (m && /verif|^ms$/i.test(m[1])) return `verification (${m[1]})`;
-  return 'other';
+  return /^v=spf1\b/i.test((rec || '').trim()) ? 'TXT SPF' : 'TXT';
 }
 
 // PS-019: fan a multi-record FOUND TXT row into one row per record.
 function expandMultiRecordRow(row) {
   if (row.type !== 'TXT' || row.status !== 'FOUND' || !row.value) return [row];
   const records = row.value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (records.length <= 1) return [row];
+  if (records.length <= 1) return [{ ...row, txtKind: classifyTxtRecord(row.value) }];
   return records.map(rec => ({
     ...row,
     value: rec,
