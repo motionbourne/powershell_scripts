@@ -801,6 +801,27 @@ function dnsResultToRow(check, hostname, result) {
   };
 }
 
+function classifyTxtRecord(rec) {
+  const s = rec.toLowerCase();
+  if (/^v=spf1\b/.test(s)) return 'SPF';
+  if (/^v=dkim1\b/.test(s)) return 'DKIM';
+  const m = rec.match(/^([a-z0-9_-]+)\s*=/i);
+  if (m && /verif|^ms$/i.test(m[1])) return `verification (${m[1]})`;
+  return 'other';
+}
+
+// PS-019: fan a multi-record FOUND TXT row into one row per record.
+function expandMultiRecordRow(row) {
+  if (row.type !== 'TXT' || row.status !== 'FOUND' || !row.value) return [row];
+  const records = row.value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (records.length <= 1) return [row];
+  return records.map(rec => ({
+    ...row,
+    value: rec,
+    txtKind: classifyTxtRecord(rec)
+  }));
+}
+
 function vcardField(vcard, names) {
   if (!Array.isArray(vcard) || vcard.length < 2 || !Array.isArray(vcard[1])) return null;
   for (const row of vcard[1]) {
@@ -1412,11 +1433,19 @@ async function runInterpretation(domain, checkRows, queryMeta) {
   rows.push(analyzeDnssec(domain, queryMeta.sawAd, queryMeta.hadSuccessfulLookup));
 
   for (const { srcSection, analyze } of ANALYSIS_PAIRED) {
-    const srcRow = checkRows.find(r => r.section === srcSection);
-    if (srcRow && srcRow.status === 'FOUND') {
-      srcRow.status = 'INFO';
+    const srcRows = checkRows.filter(r => r.section === srcSection);
+    let combinedRow = null;
+    if (srcRows.length) {
+      const usable = srcRows.filter(r => r.value && r.value !== 'Not Found');
+      combinedRow = {
+        ...srcRows[0],
+        value: (usable.length ? usable : srcRows).map(r => r.value).join('\n')
+      };
+      for (const r of srcRows) {
+        if (r.status === 'FOUND') r.status = 'INFO';
+      }
     }
-    rows.push(await analyze(srcRow));
+    rows.push(await analyze(combinedRow));
   }
 
   const ptrRows = await analyzeMxPtr(domain);
@@ -1535,8 +1564,11 @@ function renderTable() {
                   r.status === 'LOOKUP FAILED' ? 'badge-error' :
                   r.status === 'FINDING' ? 'badge-finding' :
                   r.status === 'WARN' ? 'badge-warn' : 'badge-info';
+    const txtKindLabel = r.txtKind
+      ? `<div class="txt-kind" style="color:var(--muted);font-size:0.75rem;margin-bottom:0.2rem">${esc(r.txtKind)}</div>`
+      : '';
     const valueDisplay = r.value && r.value !== 'Not Found'
-      ? esc(r.value).replace(/\n/g, '<br>')
+      ? `${txtKindLabel}${esc(r.value).replace(/\n/g, '<br>')}`
       : '<span style="color:var(--muted)">—</span>';
     html += `<tr class="result-row" style="animation-delay:${i * 0.02}s">
       <td><div class="section-name">${esc(r.section)}</div><div class="record-type">${esc(r.type)}</div></td>
@@ -1640,7 +1672,7 @@ async function runAudit() {
   }
 
   let completed = 0;
-  const checkResults = await mapPool(checks, QUERY_CONCURRENCY, async (check) => {
+  const checkResultsNested = await mapPool(checks, QUERY_CONCURRENCY, async (check) => {
     const hostname = check.host(domain);
     const result = await queryDNS(hostname, check.type);
     if (result.status === 'found' || result.status === 'absent') {
@@ -1655,8 +1687,9 @@ async function runAudit() {
     document.getElementById('progressLabel').textContent = `Checking: ${check.section}`;
     document.getElementById('progressBar').style.width = `${(completed / checks.length) * 100}%`;
 
-    return row;
+    return expandMultiRecordRow(row);
   });
+  const checkResults = checkResultsNested.flat();
 
   allResults.push(...checkResults);
 
