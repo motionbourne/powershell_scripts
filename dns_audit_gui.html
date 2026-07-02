@@ -1559,14 +1559,11 @@ function renderTable() {
                   r.status === 'LOOKUP FAILED' ? 'badge-error' :
                   r.status === 'FINDING' ? 'badge-finding' :
                   r.status === 'WARN' ? 'badge-warn' : 'badge-info';
-    const txtKindLabel = r.txtKind
-      ? `<div class="txt-kind" style="color:var(--muted);font-size:0.75rem;margin-bottom:0.2rem">${esc(r.txtKind)}</div>`
-      : '';
     const valueDisplay = r.value && r.value !== 'Not Found'
-      ? `${txtKindLabel}${esc(r.value).replace(/\n/g, '<br>')}`
+      ? esc(r.value).replace(/\n/g, '<br>')
       : '<span style="color:var(--muted)">—</span>';
     html += `<tr class="result-row" style="animation-delay:${i * 0.02}s">
-      <td><div class="section-name">${esc(r.section)}</div><div class="record-type">${esc(r.type)}</div></td>
+      <td><div class="section-name">${esc(r.section)}</div><div class="record-type">${esc(r.txtKind || r.type)}</div></td>
       <td><span class="badge badge-info">${esc(r.type)}</span></td>
       <td><div class="hostname">${esc(r.hostname)}</div></td>
       <td><div class="value">${valueDisplay}</div></td>
